@@ -11,16 +11,16 @@
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
       --yellow:#FFD600; --bg-dark:#060C10;
-      --glass:rgba(6,12,16,0.80); --text:#FFFFFF;
+      --glass:rgba(6,12,16,0.82); --text:#FFFFFF;
       --text-dim:rgba(255,255,255,0.55); --border:rgba(255,214,0,0.30); --green:#00E676;
     }
     html,body { width:100%; height:100%; overflow:hidden; background:#000; }
 
-    /* 권한 화면 */
+    /* ── 권한 화면 ── */
     #permission-screen {
       position:fixed; inset:0; z-index:9999; background:var(--bg-dark);
-      display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px;
-      font-family:'Noto Sans KR',sans-serif;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      padding:32px 24px; font-family:'Noto Sans KR',sans-serif;
     }
     .logo-icon { font-size:52px; margin-bottom:20px; animation:float 3s ease-in-out infinite; }
     @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
@@ -42,11 +42,12 @@
     #start-btn:disabled { opacity:0.6; cursor:default; }
     #error-msg { margin-top:14px; font-family:'DM Mono',monospace; font-size:12px; color:#FF5252; text-align:center; display:none; line-height:1.7; white-space:pre-line; }
 
-    /* AR 화면 */
+    /* ── AR 화면 ── */
     #ar-screen { position:fixed; inset:0; display:none; }
-    #video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    #video  { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
     #canvas { position:absolute; inset:0; width:100%; height:100%; }
 
+    /* 코너 */
     .corner { position:absolute; width:22px; height:22px; z-index:10; }
     .corner::before,.corner::after { content:''; position:absolute; background:var(--yellow); }
     .corner::before { width:100%; height:2px; top:0; left:0; }
@@ -56,6 +57,7 @@
     .corner.bl { bottom:14px; left:14px; transform:rotate(270deg); }
     .corner.br { bottom:14px; right:14px; transform:rotate(180deg); }
 
+    /* 상태바 */
     #status-bar {
       position:absolute; top:14px; left:50%; transform:translateX(-50%);
       background:var(--glass); border:1px solid var(--border); border-radius:100px; padding:7px 16px;
@@ -65,6 +67,15 @@
     #status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); animation:blink 1.5s ease-in-out infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
+    /* GPS 정확도 경고 */
+    #accuracy-warn {
+      position:absolute; top:52px; left:50%; transform:translateX(-50%);
+      background:rgba(255,80,50,0.88); border-radius:8px; padding:5px 14px;
+      font-family:'DM Mono',monospace; font-size:11px; color:#fff;
+      white-space:nowrap; z-index:10; display:none;
+    }
+
+    /* 하단 패널 */
     #info-panel {
       position:absolute; bottom:0; left:0; right:0; z-index:10;
       background:linear-gradient(transparent, var(--glass) 35%);
@@ -83,6 +94,7 @@
 </head>
 <body>
 
+<!-- 권한 화면 -->
 <div id="permission-screen">
   <div class="logo-icon">🧭</div>
   <h1 class="perm-title">AR<br/><em>안전체험 가이드</em></h1>
@@ -96,6 +108,7 @@
   <p id="error-msg"></p>
 </div>
 
+<!-- AR 화면 -->
 <div id="ar-screen">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
@@ -105,6 +118,7 @@
     <div id="status-dot"></div>
     <span id="status-text">GPS 신호 탐색 중...</span>
   </div>
+  <div id="accuracy-warn">⚠ GPS 정확도 낮음 — 실외에서 사용하세요</div>
   <div id="info-panel">
     <div id="count-label">탐지된 위치 : 0곳</div>
     <div id="gps-coords">위도 — / 경도 —</div>
@@ -113,29 +127,21 @@
 </div>
 
 <script>
-const SEARCH_RADIUS = 600;
+const SEARCH_RADIUS = 600;   // 탐색 반경(m)
+const FOV_H        = 60;     // 카메라 수평 시야각(도)
 const LOCATIONS_URL = 'locations.json';
-const FOV_H = 60; // 폰 카메라 수평 시야각(도)
 
-let userLat = null, userLon = null, compassHeading = 0;
+let userLat = null, userLon = null, gpsAccuracy = null;
+let compassHeading = 0;
 let locations = [], nearby = [];
 
-// ── 원근 스케일: 거리 100m 줄 때마다 커짐 ─────────────────────
-// 600m → scale 0.38, 500m → 0.48 ... 100m → 0.88, 0m → 1.0
-function perspectiveScale(dist) {
-  // 최대 거리 600m 기준, 선형 보간
-  // 600m: 0.38 / 100m: 0.88 / 0m: 1.0
-  const minScale = 0.38, maxScale = 1.0;
-  const t = Math.max(0, 1 - dist / SEARCH_RADIUS);
-  return minScale + (maxScale - minScale) * t;
-}
-
-// ── 거리 계산 ─────────────────────────────────────────────────
+// ── 거리 계산 (Haversine) ─────────────────────────────────────
 function calcDist(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = (lat2-lat1)*Math.PI/180;
   const dLon = (lon2-lon1)*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
@@ -148,8 +154,17 @@ function calcBearing(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
 
+// ── 각도 차이 (-180 ~ 180) ────────────────────────────────────
 function angleDiff(a, b) { return ((a-b+540)%360)-180; }
 
+// ── 원근 스케일: 100m 줄 때마다 커짐 ─────────────────────────
+// 600m → 0.40 / 300m → 0.70 / 100m → 0.87 / 0m → 1.00
+function perspectiveScale(dist) {
+  const t = Math.max(0, 1 - dist / SEARCH_RADIUS);
+  return 0.40 + 0.60 * t;
+}
+
+// ── 둥근 사각형 ───────────────────────────────────────────────
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
@@ -158,18 +173,24 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
 }
 
-// ── 위치 데이터 로드 ─────────────────────────────────────────
+// ── 위치 데이터 로드 (중복 제거 포함) ────────────────────────
 async function loadLocations() {
   try {
     const res = await fetch(LOCATIONS_URL);
-    locations = await res.json();
+    const raw = await res.json();
+    // name 기준 중복 제거
+    const seen = new Set();
+    locations = raw.filter(l => {
+      if (seen.has(l.name)) return false;
+      seen.add(l.name); return true;
+    });
   } catch(e) {
     locations = [
-      {name:"생존수영",           lat:37.1028735053073,   lon:129.04242483596474},
-      {name:"주수체험",           lat:37.104298260520885, lon:129.0399941892712},
-      {name:"심폐소생술·외상처치", lat:37.103922335806324, lon:129.04063647937465},
-      {name:"소화기체험",         lat:37.102679842056396, lon:129.04006887222562},
-      {name:"테스트",             lat:37.100263887244125, lon:129.02195210047313}
+      {name:"생존수영",            lat:37.1028735053073,   lon:129.04242483596474},
+      {name:"주수체험",            lat:37.104298260520885, lon:129.0399941892712},
+      {name:"심폐소생술·외상처치",  lat:37.103922335806324, lon:129.04063647937465},
+      {name:"소화기체험",          lat:37.102679842056396, lon:129.04006887222562},
+      {name:"테스트",              lat:37.100263887244125, lon:129.02195210047313}
     ];
   }
 }
@@ -177,191 +198,128 @@ async function loadLocations() {
 // ── Canvas 렌더 ───────────────────────────────────────────────
 function render() {
   const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
   const W = canvas.width  = canvas.offsetWidth;
   const H = canvas.height = canvas.offsetHeight;
-  ctx.clearRect(0,0,W,H);
+  ctx.clearRect(0, 0, W, H);
 
   if (userLat === null) { requestAnimationFrame(render); return; }
 
-  const bounce = Math.sin(Date.now()/480) * 4; // 화살표 바운스
-  const halfFOV = FOV_H / 2;
-  const EDGE_PAD = 28; // 화면 가장자리 여백
+  const bounce  = Math.sin(Date.now()/500) * 4;
+  const halfFOV = FOV_H / 2;  // 30°
+  const MARGIN  = 20;
+
+  // 베이스 크기 상수 (scale=1일 때 기준)
+  const B_FONT  = 15;   // 장소명 폰트
+  const B_DFONT = 11;   // 거리 폰트
+  const B_PADX  = 14;   // 가로 패딩
+  const B_PADY  = 7;    // 세로 패딩
+  const B_GAP   = 4;    // 장소명↔거리 간격
+  const B_ARR   = 11;   // 화살표 크기
+  const B_RAD   = 8;    // 모서리 반경
 
   nearby.forEach(loc => {
     const dist    = Math.round(calcDist(userLat, userLon, loc.lat, loc.lon));
     const bearing = calcBearing(userLat, userLon, loc.lat, loc.lon);
     const diff    = angleDiff(bearing, compassHeading);
-    const scale   = perspectiveScale(dist);
 
-    // ── 기본 크기 (scale=1 기준) ──
-    // 너무 크지 않게 — 최대 라벨 너비 약 150px
-    const BASE_FONT   = 14;   // px
-    const BASE_DIST_FONT = 11;
-    const BASE_PAD_X  = 14;
-    const BASE_PAD_Y  = 8;
-    const BASE_ARROW  = 11;
-    const BASE_RADIUS = 7;
+    // ── FOV 밖이면 완전히 스킵 ───────────────────────────────
+    if (Math.abs(diff) > halfFOV) return;
 
-    const font     = BASE_FONT   * scale;
-    const distFont = BASE_DIST_FONT * scale;
-    const padX     = BASE_PAD_X  * scale;
-    const padY     = BASE_PAD_Y  * scale;
-    const arrowSz  = BASE_ARROW  * scale;
-    const radius   = BASE_RADIUS * scale;
+    const scale  = perspectiveScale(dist);
+    const font   = B_FONT  * scale;
+    const dfont  = B_DFONT * scale;
+    const padX   = B_PADX  * scale;
+    const padY   = B_PADY  * scale;
+    const gap    = B_GAP   * scale;
+    const arrSz  = B_ARR   * scale;
+    const radius = B_RAD   * scale;
 
+    // 텍스트 너비 측정
     ctx.font = `bold ${font}px 'Noto Sans KR', sans-serif`;
-    const labelW = ctx.measureText(loc.name).width;
-    const boxW   = labelW + padX * 2;
-    const lineH  = font + distFont + padY * 2 + 4 * scale;
-    const boxH   = lineH;
+    const nameW = ctx.measureText(loc.name).width;
+    ctx.font = `bold ${dfont}px 'DM Mono', monospace`;
+    const distW = ctx.measureText(`${dist}m`).width;
+    const boxW  = Math.max(nameW, distW) + padX * 2;
+    const boxH  = padY + font + gap + dfont + padY;
 
-    const isInFOV = Math.abs(diff) <= halfFOV + 5;
+    // X: diff 0° → 화면 중앙 / ±30° → 화면 끝
+    const xRatio = (diff / halfFOV + 1) / 2;
+    let x = W * xRatio;
+    x = Math.max(boxW/2 + MARGIN, Math.min(W - boxW/2 - MARGIN, x));
 
-    // ── FOV 안: 실제 방향에 라벨 표시 ────────────────────────
-    if (isInFOV) {
-      // X 위치 — diff 0° = 화면 중앙
-      const xRatio = (diff / halfFOV + 1) / 2;
-      let x = W * xRatio;
-      x = Math.max(boxW/2 + EDGE_PAD, Math.min(W - boxW/2 - EDGE_PAD, x));
+    // Y: 거리 멀수록 위, 가까울수록 아래 (원근감)
+    const yTop = H * 0.14 + (1 - scale) * H * 0.20;
 
-      // Y 위치 — 거리 멀수록 위쪽, 가까울수록 아래쪽 (원근감)
-      const yBase = H * 0.18 + (1 - scale) * H * 0.22;
+    // FOV 경계 부드럽게 페이드 (±25°~30° 구간)
+    const FADE_START = halfFOV - 5;
+    const fade = Math.abs(diff) > FADE_START
+      ? 1 - (Math.abs(diff) - FADE_START) / (halfFOV - FADE_START)
+      : 1;
 
-      // FOV 경계 페이드
-      const fade = Math.min(1, (halfFOV + 5 - Math.abs(diff)) / 12);
-      ctx.save();
-      ctx.globalAlpha = Math.max(0.4, fade);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, fade));
 
-      drawLabel(ctx, x, yBase, loc.name, dist, boxW, boxH, font, distFont, padY, arrowSz, radius, scale, bounce);
-      ctx.restore();
+    // ── 배경판 ──
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    roundRect(ctx, x - boxW/2, yTop, boxW, boxH, radius);
+    ctx.fill();
 
-    } else {
-      // ── FOV 밖: 가장자리에 방향 표시 ─────────────────────────
-      // 작은 삼각형 + 이름만 표시
+    ctx.strokeStyle = 'rgba(255,214,0,0.65)';
+    ctx.lineWidth = 1.2 * scale;
+    roundRect(ctx, x - boxW/2, yTop, boxW, boxH, radius);
+    ctx.stroke();
 
-      const edgeScale = scale * 0.65; // 가장자리는 더 작게
-      const ef   = BASE_FONT   * edgeScale;
-      const epX  = BASE_PAD_X  * edgeScale;
-      const epY  = BASE_PAD_Y  * edgeScale;
-      const earr = BASE_ARROW  * edgeScale;
-      const erad = BASE_RADIUS * edgeScale;
+    // ── 장소명 ──
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `bold ${font}px 'Noto Sans KR', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(loc.name, x, yTop + padY);
 
-      ctx.font = `bold ${ef}px 'Noto Sans KR', sans-serif`;
-      const eLabelW = ctx.measureText(loc.name).width;
-      const eBoxW = eLabelW + epX * 2;
-      const eBoxH = ef + epY * 2;
+    // ── 거리 ──
+    ctx.fillStyle = '#FFD600';
+    ctx.font = `bold ${dfont}px 'DM Mono', monospace`;
+    ctx.fillText(`${dist}m`, x, yTop + padY + font + gap);
 
-      // 왼쪽/오른쪽 가장자리 결정
-      const onLeft = diff < 0;
-      const ex = onLeft ? EDGE_PAD + eBoxW/2 : W - EDGE_PAD - eBoxW/2;
+    // ── 화살표 ▼ (바운스) ──
+    const arrTop = yTop + boxH + 5 * scale + bounce;
+    ctx.fillStyle = '#FFD600';
+    ctx.shadowColor = 'rgba(255,214,0,0.55)';
+    ctx.shadowBlur  = 7 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x - arrSz,     arrTop);
+    ctx.lineTo(x + arrSz,     arrTop);
+    ctx.lineTo(x,             arrTop + arrSz * 1.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
 
-      // Y: 거리에 따라 배치
-      const ey = H * 0.15 + (1 - edgeScale) * H * 0.2;
+    // ── 점선 ──
+    ctx.strokeStyle = 'rgba(255,214,0,0.28)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4 * scale, 4 * scale]);
+    ctx.beginPath();
+    ctx.moveTo(x, arrTop + arrSz * 1.1 + 3);
+    ctx.lineTo(x, arrTop + arrSz * 1.1 + 22 * scale);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-      ctx.save();
-      ctx.globalAlpha = 0.75;
-
-      // 배경판
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      roundRect(ctx, ex - eBoxW/2, ey - eBoxH/2, eBoxW, eBoxH, erad);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,214,0,0.5)';
-      ctx.lineWidth = 1;
-      roundRect(ctx, ex - eBoxW/2, ey - eBoxH/2, eBoxW, eBoxH, erad);
-      ctx.stroke();
-
-      // 장소명
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `bold ${ef}px 'Noto Sans KR', sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(loc.name, ex, ey);
-
-      // 방향 삼각형 (←/→)
-      const triSz = earr * 0.9;
-      const triY = ey;
-      ctx.fillStyle = '#FFD600';
-      ctx.beginPath();
-      if (onLeft) {
-        // 왼쪽 화살표
-        ctx.moveTo(ex - eBoxW/2 - 5,          triY);
-        ctx.lineTo(ex - eBoxW/2 - 5 - triSz,  triY - triSz*0.65);
-        ctx.lineTo(ex - eBoxW/2 - 5 - triSz,  triY + triSz*0.65);
-      } else {
-        // 오른쪽 화살표
-        ctx.moveTo(ex + eBoxW/2 + 5,          triY);
-        ctx.lineTo(ex + eBoxW/2 + 5 + triSz,  triY - triSz*0.65);
-        ctx.lineTo(ex + eBoxW/2 + 5 + triSz,  triY + triSz*0.65);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.restore();
-    }
+    ctx.restore();
   });
 
   requestAnimationFrame(render);
 }
 
-// ── 라벨 + 화살표 그리기 ─────────────────────────────────────
-function drawLabel(ctx, x, yBase, name, dist, boxW, boxH, font, distFont, padY, arrowSz, radius, scale, bounce) {
-  const boxX = x - boxW / 2;
-  const boxY = yBase;
-
-  // 배경판
-  ctx.fillStyle = 'rgba(0,0,0,0.70)';
-  roundRect(ctx, boxX, boxY, boxW, boxH, radius);
-  ctx.fill();
-
-  // 테두리
-  ctx.strokeStyle = 'rgba(255,214,0,0.65)';
-  ctx.lineWidth = 1.2 * scale;
-  roundRect(ctx, boxX, boxY, boxW, boxH, radius);
-  ctx.stroke();
-
-  // 장소명
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `bold ${font}px 'Noto Sans KR', sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(name, x, boxY + padY + font / 2);
-
-  // 거리
-  ctx.fillStyle = '#FFD600';
-  ctx.font = `bold ${distFont}px 'DM Mono', monospace`;
-  ctx.fillText(`${dist}m`, x, boxY + boxH - padY - distFont / 2);
-
-  // 화살표 ▼ (바운스)
-  const arrowY = boxY + boxH + 6 * scale + bounce;
-  ctx.fillStyle = '#FFD600';
-  ctx.shadowColor = 'rgba(255,214,0,0.5)';
-  ctx.shadowBlur   = 8 * scale;
-  ctx.beginPath();
-  ctx.moveTo(x - arrowSz, arrowY);
-  ctx.lineTo(x + arrowSz, arrowY);
-  ctx.lineTo(x, arrowY + arrowSz * 1.1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // 점선
-  ctx.strokeStyle = 'rgba(255,214,0,0.30)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4*scale, 4*scale]);
-  ctx.beginPath();
-  ctx.moveTo(x, arrowY + arrowSz * 1.1 + 3);
-  ctx.lineTo(x, arrowY + arrowSz * 1.1 + 24 * scale);
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-// ── HUD ──────────────────────────────────────────────────────
+// ── HUD 업데이트 ─────────────────────────────────────────────
 function updateHUD() {
   if (userLat === null) return;
+
+  // 600m 내 위치 필터 + 거리순 정렬
   nearby = locations
     .filter(l => calcDist(userLat, userLon, l.lat, l.lon) <= SEARCH_RADIUS)
-    .sort((a,b) => calcDist(userLat,userLon,a.lat,a.lon) - calcDist(userLat,userLon,b.lat,b.lon));
+    .sort((a, b) =>
+      calcDist(userLat,userLon,a.lat,a.lon) - calcDist(userLat,userLon,b.lat,b.lon));
 
   document.getElementById('count-label').textContent =
     nearby.length > 0 ? `탐지된 위치 : ${nearby.length}곳` : '탐지된 위치 없음';
@@ -369,6 +327,10 @@ function updateHUD() {
     `위도 ${userLat.toFixed(6)}  /  경도 ${userLon.toFixed(6)}`;
   document.getElementById('status-text').textContent =
     nearby.length > 0 ? `${nearby.length}개 위치 표시 중 (600m 이내)` : '600m 이내 위치 없음';
+
+  // GPS 정확도 경고 (실내 등 50m 초과 시)
+  const warnEl = document.getElementById('accuracy-warn');
+  warnEl.style.display = (gpsAccuracy !== null && gpsAccuracy > 50) ? 'block' : 'none';
 
   document.getElementById('nearby-list').innerHTML = nearby.length === 0
     ? `<div class="empty-msg">현재 위치 주변에<br/>등록된 정보가 없습니다.</div>`
@@ -384,9 +346,10 @@ function updateHUD() {
 // ── GPS 감시 ─────────────────────────────────────────────────
 function startGPSWatch() {
   navigator.geolocation.watchPosition(
-    (pos) => {
-      userLat = pos.coords.latitude;
-      userLon = pos.coords.longitude;
+    pos => {
+      userLat      = pos.coords.latitude;
+      userLon      = pos.coords.longitude;
+      gpsAccuracy  = pos.coords.accuracy;
       updateHUD();
     },
     () => { document.getElementById('status-text').textContent = 'GPS 오류 — 실외에서 시도하세요'; },
@@ -396,10 +359,14 @@ function startGPSWatch() {
 
 // ── 나침반 ────────────────────────────────────────────────────
 function startCompass() {
-  const handler = (e) => {
-    if (e.webkitCompassHeading !== undefined) {
+  const handler = e => {
+    if (e.webkitCompassHeading != null) {
+      // iOS: webkitCompassHeading이 신뢰도 높음
       compassHeading = e.webkitCompassHeading;
-    } else if (e.alpha !== null) {
+    } else if (e.absolute && e.alpha != null) {
+      // Android (절대 방위)
+      compassHeading = (360 - e.alpha) % 360;
+    } else if (e.alpha != null) {
       compassHeading = (360 - e.alpha) % 360;
     }
   };
@@ -407,14 +374,16 @@ function startCompass() {
   window.addEventListener('deviceorientation', handler, true);
 }
 
+// ── 권한 요청 → AR 시작 ──────────────────────────────────────
 async function requestPermissions() {
-  const btn = document.getElementById('start-btn');
+  const btn   = document.getElementById('start-btn');
   const errEl = document.getElementById('error-msg');
   btn.textContent = '권한 요청 중...';
   btn.disabled = true;
   errEl.style.display = 'none';
 
   try {
+    // 1. 카메라 (후면)
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
     });
@@ -422,30 +391,43 @@ async function requestPermissions() {
     video.srcObject = stream;
     await video.play();
 
+    // 2. GPS 첫 위치
     await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
-        (pos) => { userLat=pos.coords.latitude; userLon=pos.coords.longitude; resolve(); },
-        reject, { enableHighAccuracy:true, timeout:15000 }
+        pos => {
+          userLat     = pos.coords.latitude;
+          userLon     = pos.coords.longitude;
+          gpsAccuracy = pos.coords.accuracy;
+          resolve();
+        },
+        reject,
+        { enableHighAccuracy:true, timeout:15000 }
       );
     });
 
+    // 3. iOS 방향 센서 권한
     if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
       try { await DeviceOrientationEvent.requestPermission(); } catch(e) {}
     }
 
+    // 4. 위치 데이터 로드
     await loadLocations();
 
+    // 5. AR 시작
     document.getElementById('permission-screen').style.display = 'none';
     document.getElementById('ar-screen').style.display = 'block';
-
     startCompass();
     startGPSWatch();
     render();
+
   } catch(e) {
     errEl.style.display = 'block';
-    if (e.code === 1) errEl.textContent = '📍 위치 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
-    else if (e.name === 'NotAllowedError') errEl.textContent = '📷 카메라 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
-    else errEl.textContent = `오류: ${e.message || e}`;
+    if (e.code === 1)
+      errEl.textContent = '📍 위치 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
+    else if (e.name === 'NotAllowedError')
+      errEl.textContent = '📷 카메라 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
+    else
+      errEl.textContent = `오류: ${e.message || e}`;
     btn.textContent = '다시 시도';
     btn.disabled = false;
   }
