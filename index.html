@@ -174,7 +174,80 @@
       color:rgba(255,255,255,0.92); text-align:center; text-shadow:0 1px 5px rgba(0,0,0,1);
       position:absolute; bottom:calc(100% + 2px); left:0; right:0;
     }
-  </style>
+  
+    /* ── 권한 동의 팝업 ── */
+    #consent-overlay {
+      position:fixed; inset:0; z-index:99999;
+      background:rgba(0,0,0,0.65);
+      backdrop-filter:blur(6px);
+      display:flex; align-items:center; justify-content:center;
+      padding:24px;
+      animation:fadeInPop 0.25s ease;
+    }
+    @keyframes fadeInPop {
+      from{opacity:0;transform:scale(0.94)}
+      to{opacity:1;transform:scale(1)}
+    }
+    #consent-box {
+      background:linear-gradient(160deg,#141E30 0%,#0D1520 100%);
+      border:1px solid rgba(255,255,255,0.15);
+      border-top:1px solid rgba(255,255,255,0.28);
+      border-radius:20px;
+      padding:28px 24px 22px;
+      width:100%; max-width:320px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.70), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    #consent-box h2 {
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:17px; font-weight:900; color:#fff;
+      text-align:center; margin-bottom:6px;
+      letter-spacing:-0.3px;
+    }
+    #consent-box p.consent-sub {
+      font-size:12px; color:rgba(255,255,255,0.55);
+      text-align:center; margin-bottom:20px; line-height:1.6;
+    }
+    .consent-items {
+      display:flex; flex-direction:column; gap:10px;
+      margin-bottom:22px;
+    }
+    .consent-item {
+      display:flex; align-items:center; gap:12px;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:12px; padding:11px 14px;
+    }
+    .consent-item-icon {
+      font-size:22px; flex-shrink:0;
+      width:36px; text-align:center;
+    }
+    .consent-item-text strong {
+      display:block; font-size:13px; font-weight:700;
+      color:#fff; margin-bottom:2px;
+    }
+    .consent-item-text span {
+      font-size:11px; color:rgba(255,255,255,0.50); line-height:1.4;
+    }
+    #consent-agree {
+      width:100%; padding:14px;
+      background:linear-gradient(135deg,#FFD400 0%,#FF9500 100%);
+      color:#0A0A0A; border:none; border-radius:14px;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:15px; font-weight:900; letter-spacing:0.3px;
+      cursor:pointer; margin-bottom:10px;
+      box-shadow:0 4px 20px rgba(255,180,0,0.40);
+      transition:transform .15s, opacity .15s;
+    }
+    #consent-agree:active { transform:scale(0.97); opacity:0.88; }
+    #consent-cancel {
+      width:100%; padding:10px;
+      background:none; border:none;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:13px; color:rgba(255,255,255,0.40);
+      cursor:pointer;
+    }
+    #consent-cancel:active { color:rgba(255,255,255,0.70); }
+</style>
 </head>
 <body>
 
@@ -193,8 +266,42 @@
     <div class="perm-item"><span class="perm-icon">📍</span><div class="perm-label">위치 (GPS)<small>거리 및 방향 계산</small></div></div>
     <div class="perm-item"><span class="perm-icon">🧭</span><div class="perm-label">나침반<small>화살표 방향 표시</small></div></div>
   </div>
-  <button id="start-btn" onclick="requestPermissions()">AR 시작하기 →</button>
+  <button id="start-btn" onclick="showConsentPopup()">AR 시작하기 →</button>
   <p id="error-msg"></p>
+  </div>
+</div>
+
+
+<!-- 권한 동의 팝업 -->
+<div id="consent-overlay" style="display:none;">
+  <div id="consent-box">
+    <h2>📍 AR 체험 시작 전 안내</h2>
+    <p class="consent-sub">원활한 체험을 위해<br/>아래 권한이 필요합니다.</p>
+    <div class="consent-items">
+      <div class="consent-item">
+        <div class="consent-item-icon">📷</div>
+        <div class="consent-item-text">
+          <strong>카메라</strong>
+          <span>AR 오버레이 화면 표시에 사용됩니다</span>
+        </div>
+      </div>
+      <div class="consent-item">
+        <div class="consent-item-icon">📍</div>
+        <div class="consent-item-text">
+          <strong>위치 (GPS)</strong>
+          <span>체험장까지의 거리·방향 계산에 사용됩니다</span>
+        </div>
+      </div>
+      <div class="consent-item">
+        <div class="consent-item-icon">🧭</div>
+        <div class="consent-item-text">
+          <strong>나침반</strong>
+          <span>정확한 방향 안내에 사용됩니다</span>
+        </div>
+      </div>
+    </div>
+    <button id="consent-agree" onclick="onConsentAgree()">동의하고 시작하기</button>
+    <button id="consent-cancel" onclick="onConsentCancel()">취소</button>
   </div>
 </div>
 
@@ -590,6 +697,19 @@ function startCompass() {
 }
 
 // ── 권한 요청 → AR 시작 ──────────────────────────────────────
+
+// ── 권한 동의 팝업 ────────────────────────────────────────────
+function showConsentPopup() {
+  document.getElementById('consent-overlay').style.display = 'flex';
+}
+function onConsentCancel() {
+  document.getElementById('consent-overlay').style.display = 'none';
+}
+function onConsentAgree() {
+  document.getElementById('consent-overlay').style.display = 'none';
+  requestPermissions();
+}
+
 async function requestPermissions() {
   const btn=document.getElementById('start-btn');
   const errEl=document.getElementById('error-msg');
