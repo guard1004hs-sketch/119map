@@ -5,196 +5,181 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <title>AR 위치 탐색기</title>
+  <title>AR 안전체험 가이드</title>
 
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
-  <script src="https://raw.githack.com/nicktarnold/aframe-look-at/master/dist/aframe-look-at-component.min.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@700;900&family=DM+Mono:wght@500&display=swap');
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 
     :root {
-      --neon: #00FFB2;
-      --neon-dim: rgba(0,255,178,0.15);
-      --warn: #FF6B35;
-      --bg-dark: #050A0E;
-      --glass: rgba(5,10,14,0.82);
-      --text: #E8F4F0;
-      --text-dim: rgba(232,244,240,0.55);
-      --border: rgba(0,255,178,0.25);
+      --yellow: #FFD600;
+      --yellow-shadow: rgba(255,214,0,0.55);
+      --bg-dark: #060C10;
+      --glass: rgba(6,12,16,0.80);
+      --text: #FFFFFF;
+      --text-dim: rgba(255,255,255,0.55);
+      --border: rgba(255,214,0,0.30);
+      --green: #00E676;
     }
 
     html, body { width:100%; height:100%; overflow:hidden; background:#000; }
 
-    /* ── 퍼미션 화면 ── */
+    /* ── 권한 화면 ── */
     #permission-screen {
       position:fixed; inset:0; z-index:9999;
-      background: var(--bg-dark);
+      background:var(--bg-dark);
       display:flex; flex-direction:column;
       align-items:center; justify-content:center;
-      padding:32px 24px; gap:0;
-      font-family:'Syne',sans-serif;
+      padding:32px 24px;
+      font-family:'Noto Sans KR', sans-serif;
     }
 
-    .perm-grid {
-      width:64px; height:64px; margin-bottom:32px;
-      display:grid; grid-template-columns:1fr 1fr; gap:4px;
+    .logo-icon {
+      font-size:56px; margin-bottom:24px;
+      animation: float 3s ease-in-out infinite;
     }
-    .perm-grid span {
-      border-radius:4px; background:var(--neon-dim);
-      border:1px solid var(--border);
-      animation: pulse-box 2s ease-in-out infinite;
-    }
-    .perm-grid span:nth-child(1){ animation-delay:0s; }
-    .perm-grid span:nth-child(2){ animation-delay:.3s; }
-    .perm-grid span:nth-child(3){ animation-delay:.6s; }
-    .perm-grid span:nth-child(4){ animation-delay:.9s; }
-
-    @keyframes pulse-box {
-      0%,100%{ background:var(--neon-dim); }
-      50%{ background:rgba(0,255,178,0.35); }
+    @keyframes float {
+      0%,100%{ transform:translateY(0); }
+      50%{ transform:translateY(-8px); }
     }
 
     .perm-title {
-      font-size:28px; font-weight:800; color:var(--text);
-      letter-spacing:-0.5px; text-align:center; line-height:1.2;
-      margin-bottom:12px;
+      font-size:26px; font-weight:900; color:var(--text);
+      text-align:center; line-height:1.25; margin-bottom:8px;
     }
-    .perm-title em { color:var(--neon); font-style:normal; }
+    .perm-title em { color:var(--yellow); font-style:normal; }
 
     .perm-sub {
-      font-family:'DM Mono',monospace; font-size:13px;
-      color:var(--text-dim); text-align:center; line-height:1.7;
-      margin-bottom:40px;
+      font-family:'DM Mono', monospace; font-size:12px;
+      color:var(--text-dim); text-align:center;
+      line-height:1.7; margin-bottom:36px;
     }
 
     .perm-items {
-      display:flex; flex-direction:column; gap:12px;
-      width:100%; max-width:320px; margin-bottom:40px;
+      display:flex; flex-direction:column; gap:10px;
+      width:100%; max-width:300px; margin-bottom:36px;
     }
     .perm-item {
       display:flex; align-items:center; gap:12px;
-      background:rgba(0,255,178,0.06); border:1px solid var(--border);
-      border-radius:10px; padding:12px 16px;
+      background:rgba(255,214,0,0.06);
+      border:1px solid var(--border);
+      border-radius:12px; padding:14px 16px;
     }
-    .perm-icon {
-      width:32px; height:32px; border-radius:8px;
-      background:var(--neon-dim); border:1px solid var(--border);
-      display:flex; align-items:center; justify-content:center;
-      font-size:16px; flex-shrink:0;
+    .perm-icon { font-size:22px; flex-shrink:0; }
+    .perm-label {
+      font-size:14px; font-weight:700; color:var(--text);
     }
-    .perm-label { font-family:'DM Mono',monospace; font-size:12px; color:var(--text); }
-    .perm-label small { display:block; color:var(--text-dim); font-size:11px; margin-top:2px; }
+    .perm-label small {
+      display:block; font-size:11px;
+      color:var(--text-dim); font-weight:400; margin-top:2px;
+    }
 
     #start-btn {
-      width:100%; max-width:320px; padding:18px;
-      background:var(--neon); color:var(--bg-dark);
-      border:none; border-radius:12px; cursor:pointer;
-      font-family:'Syne',sans-serif; font-size:16px; font-weight:700;
+      width:100%; max-width:300px; padding:18px;
+      background:var(--yellow); color:#060C10;
+      border:none; border-radius:14px; cursor:pointer;
+      font-family:'Noto Sans KR', sans-serif;
+      font-size:16px; font-weight:900;
       letter-spacing:0.5px;
+      box-shadow: 0 0 24px var(--yellow-shadow);
       transition:all .2s;
-      position:relative; overflow:hidden;
-    }
-    #start-btn::after {
-      content:''; position:absolute; inset:0;
-      background:linear-gradient(135deg,rgba(255,255,255,0.2),transparent);
     }
     #start-btn:active { transform:scale(0.97); }
+    #start-btn:disabled { opacity:0.6; cursor:default; }
 
     #error-msg {
-      margin-top:16px; font-family:'DM Mono',monospace; font-size:12px;
-      color:var(--warn); text-align:center; display:none; line-height:1.6;
+      margin-top:16px;
+      font-family:'DM Mono', monospace; font-size:12px;
+      color:#FF5252; text-align:center;
+      display:none; line-height:1.7; white-space:pre-line;
     }
 
-    /* ── AR HUD ── */
+    /* ── HUD ── */
     #hud {
       position:fixed; inset:0; z-index:100;
       pointer-events:none; display:none;
     }
 
     /* 코너 브라켓 */
-    .corner { position:absolute; width:28px; height:28px; }
+    .corner { position:absolute; width:24px; height:24px; }
     .corner::before, .corner::after {
-      content:''; position:absolute; background:var(--neon);
+      content:''; position:absolute; background:var(--yellow);
     }
     .corner::before { width:100%; height:2px; top:0; left:0; }
     .corner::after  { width:2px; height:100%; top:0; left:0; }
-    .corner.tr { top:20px; right:20px; transform:rotate(90deg); }
-    .corner.bl { bottom:20px; left:20px; transform:rotate(270deg); }
-    .corner.br { bottom:20px; right:20px; transform:rotate(180deg); }
-    .corner.tl { top:20px; left:20px; }
-
-    /* 스캔 라인 */
-    .scan-line {
-      position:absolute; left:0; right:0; height:1px;
-      background:linear-gradient(90deg, transparent, var(--neon), transparent);
-      top:0; animation: scan 4s linear infinite; opacity:0.5;
-    }
-    @keyframes scan { from{top:0%} to{top:100%} }
+    .corner.tl { top:16px; left:16px; }
+    .corner.tr { top:16px; right:16px; transform:rotate(90deg); }
+    .corner.bl { bottom:16px; left:16px; transform:rotate(270deg); }
+    .corner.br { bottom:16px; right:16px; transform:rotate(180deg); }
 
     /* 상단 상태바 */
     #status-bar {
-      position:absolute; top:20px; left:50%; transform:translateX(-50%);
+      position:absolute; top:16px; left:50%; transform:translateX(-50%);
       background:var(--glass); border:1px solid var(--border);
-      border-radius:100px; padding:8px 20px;
-      display:flex; align-items:center; gap:10px;
+      border-radius:100px; padding:8px 18px;
+      display:flex; align-items:center; gap:8px;
       backdrop-filter:blur(12px);
-      font-family:'DM Mono',monospace; font-size:12px; color:var(--text);
-      white-space:nowrap;
+      font-family:'DM Mono', monospace; font-size:11px;
+      color:var(--text); white-space:nowrap;
     }
     #status-dot {
-      width:7px; height:7px; border-radius:50%;
-      background:var(--neon);
-      box-shadow:0 0 6px var(--neon);
-      animation: blink 1.5s ease-in-out infinite;
+      width:6px; height:6px; border-radius:50%;
+      background:var(--green);
+      box-shadow:0 0 6px var(--green);
+      animation:blink 1.5s ease-in-out infinite;
     }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    /* 하단 정보 패널 */
+    /* 하단 패널 */
     #info-panel {
       position:absolute; bottom:0; left:0; right:0;
-      background:linear-gradient(transparent, var(--glass) 40%);
-      padding:40px 20px 32px;
-      display:flex; flex-direction:column; gap:6px;
+      background:linear-gradient(transparent, var(--glass) 35%);
+      padding:48px 20px 28px;
       pointer-events:auto;
     }
 
-    #location-count {
-      font-family:'Syne',sans-serif; font-weight:800;
-      font-size:13px; color:var(--neon); letter-spacing:1px;
-      text-transform:uppercase;
+    #count-label {
+      font-family:'Noto Sans KR', sans-serif;
+      font-weight:900; font-size:12px;
+      color:var(--yellow); letter-spacing:1px;
+      text-transform:uppercase; margin-bottom:4px;
     }
     #gps-coords {
-      font-family:'DM Mono',monospace; font-size:11px;
-      color:var(--text-dim);
+      font-family:'DM Mono', monospace; font-size:10px;
+      color:var(--text-dim); margin-bottom:10px;
     }
 
-    /* 위치 목록 */
+    /* 장소 목록 */
     #nearby-list {
-      margin-top:8px; display:flex; flex-direction:column; gap:6px;
-      max-height:180px; overflow-y:auto;
+      display:flex; flex-direction:column; gap:6px;
+      max-height:160px; overflow-y:auto;
     }
     #nearby-list::-webkit-scrollbar { display:none; }
 
     .nearby-item {
-      background:rgba(5,10,14,0.75); border:1px solid var(--border);
-      border-radius:8px; padding:10px 14px;
       display:flex; justify-content:space-between; align-items:center;
+      background:rgba(6,12,16,0.75);
+      border:1px solid var(--border);
+      border-radius:8px; padding:10px 14px;
       backdrop-filter:blur(8px);
     }
     .nearby-name {
-      font-family:'Syne',sans-serif; font-weight:700;
-      font-size:14px; color:var(--text);
+      font-family:'Noto Sans KR', sans-serif;
+      font-weight:700; font-size:14px; color:var(--text);
+      display:flex; align-items:center; gap:8px;
+    }
+    .nearby-name::before {
+      content:'▼'; color:var(--yellow); font-size:10px;
     }
     .nearby-dist {
-      font-family:'DM Mono',monospace; font-size:12px;
-      color:var(--neon); font-weight:500;
+      font-family:'DM Mono', monospace; font-size:12px;
+      color:var(--yellow); font-weight:500;
     }
 
-    /* A-Frame 씬 */
     a-scene { position:fixed; inset:0; }
   </style>
 </head>
@@ -202,24 +187,21 @@
 
 <!-- 권한 요청 화면 -->
 <div id="permission-screen">
-  <div class="perm-grid">
-    <span></span><span></span><span></span><span></span>
-  </div>
-
-  <h1 class="perm-title">AR<br/><em>위치 탐색기</em></h1>
-  <p class="perm-sub">증강현실로 주변 500m 내<br/>저장된 위치를 탐색합니다</p>
+  <div class="logo-icon">🧭</div>
+  <h1 class="perm-title">AR<br/><em>안전체험 가이드</em></h1>
+  <p class="perm-sub">카메라를 통해 주변 체험 시설의<br/>위치를 실시간으로 안내합니다</p>
 
   <div class="perm-items">
     <div class="perm-item">
-      <div class="perm-icon">📷</div>
+      <span class="perm-icon">📷</span>
       <div class="perm-label">카메라
         <small>AR 오버레이 표시에 사용됩니다</small>
       </div>
     </div>
     <div class="perm-item">
-      <div class="perm-icon">📍</div>
+      <span class="perm-icon">📍</span>
       <div class="perm-label">위치 (GPS)
-        <small>주변 장소까지의 거리 계산에 사용됩니다</small>
+        <small>거리 및 방향 계산에 사용됩니다</small>
       </div>
     </div>
   </div>
@@ -230,13 +212,12 @@
   <p id="error-msg"></p>
 </div>
 
-<!-- AR HUD (권한 허용 후 표시) -->
+<!-- HUD -->
 <div id="hud">
   <div class="corner tl"></div>
   <div class="corner tr"></div>
   <div class="corner bl"></div>
   <div class="corner br"></div>
-  <div class="scan-line"></div>
 
   <div id="status-bar">
     <div id="status-dot"></div>
@@ -244,27 +225,25 @@
   </div>
 
   <div id="info-panel">
-    <div id="location-count">탐지된 위치 : 0곳</div>
+    <div id="count-label">탐지된 위치 : 0곳</div>
     <div id="gps-coords">위도 — / 경도 —</div>
     <div id="nearby-list"></div>
   </div>
 </div>
 
-<!-- A-Frame AR 씬 (권한 후 동적 생성) -->
 <div id="ar-container"></div>
 
 <script>
-// ── 위치 데이터 ──────────────────────────────────────────────
-// locations.json에서 불러오거나 여기에 직접 추가하세요
+// ── 위치 데이터 ───────────────────────────────────────────────
 const LOCATIONS_URL = 'locations.json';
-const SEARCH_RADIUS = 500; // 미터
+const SEARCH_RADIUS = 600; // 미터 (넓게 설정)
 
 let userLat = null, userLon = null;
 let locations = [];
 let arScene = null;
 
-// ── 거리 계산 (Haversine 공식) ───────────────────────────────
-function haversineDistance(lat1, lon1, lat2, lon2) {
+// ── Haversine 거리 계산 ───────────────────────────────────────
+function distance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -280,27 +259,31 @@ async function loadLocations() {
     const res = await fetch(LOCATIONS_URL);
     locations = await res.json();
   } catch (e) {
-    // 파일 없을 때 데모 데이터 사용
+    console.warn('locations.json 로드 실패, 하드코딩 데이터 사용');
     locations = [
-      { name: "📍 데모 위치 A", lat: userLat + 0.001, lon: userLon + 0.001, desc: "북동쪽 100m" },
-      { name: "🏪 데모 위치 B", lat: userLat - 0.002, lon: userLon + 0.002, desc: "동남쪽 250m" },
-      { name: "🌳 데모 위치 C", lat: userLat + 0.003, lon: userLon - 0.001, desc: "북서쪽 320m" }
+      { name: "생존수영",   lat: 37.1028735053073,    lon: 129.04242483596474 },
+      { name: "주수체험",   lat: 37.104298260520885,  lon: 129.0399941892712  },
+      { name: "심폐소생술", lat: 37.103922335806324,  lon: 129.04063647937465 },
+      { name: "외상처치",   lat: 37.103922335806324,  lon: 129.04063647937465 },
+      { name: "소화기체험", lat: 37.102679842056396,  lon: 129.04006887222562 },
+      { name: "테스트",     lat: 37.100263887244125,  lon: 129.02195210047313 }
     ];
   }
 }
 
-// ── AR 씬 생성 ───────────────────────────────────────────────
+// ── A-Frame 씬 생성 ───────────────────────────────────────────
 function buildARScene() {
   const container = document.getElementById('ar-container');
-
   const scene = document.createElement('a-scene');
   scene.setAttribute('vr-mode-ui', 'enabled: false');
-  scene.setAttribute('arjs', 'sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best;');
-  scene.setAttribute('renderer', 'antialias: true; alpha: true;');
+  scene.setAttribute('arjs',
+    'sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best;');
+  scene.setAttribute('renderer', 'antialias: true; alpha: true; logarithmicDepthBuffer: true;');
   scene.setAttribute('embedded', '');
 
+  // 카메라 (GPS 모드)
   const camera = document.createElement('a-camera');
-  camera.setAttribute('gps-camera', `simulateLatitude: ${userLat}; simulateLongitude: ${userLon}`);
+  camera.setAttribute('gps-camera', '');
   camera.setAttribute('rotation-reader', '');
   scene.appendChild(camera);
 
@@ -308,105 +291,137 @@ function buildARScene() {
   container.appendChild(scene);
 }
 
-// ── AR 마커 추가 ─────────────────────────────────────────────
-function addARMarkers(nearbyLocs) {
+// ── AR 마커: 화살표 + 장소명 ─────────────────────────────────
+//
+//   ┌──────────────────────┐
+//   │     장소명 (흰 텍스트)  │  ← 검정 배경판 위
+//   └──────────────────────┘
+//          ▼  (노란 화살표)
+//
+function addARMarkers(nearby) {
   if (!arScene) return;
 
   // 기존 마커 제거
   arScene.querySelectorAll('[gps-entity-place]').forEach(el => el.remove());
 
-  nearbyLocs.forEach(loc => {
-    const dist = Math.round(haversineDistance(userLat, userLon, loc.lat, loc.lon));
+  nearby.forEach(loc => {
+    const dist = Math.round(distance(userLat, userLon, loc.lat, loc.lon));
 
+    // 최상위 엔티티 (GPS 위치에 배치)
     const entity = document.createElement('a-entity');
-    entity.setAttribute('gps-entity-place', `latitude: ${loc.lat}; longitude: ${loc.lon};`);
+    entity.setAttribute('gps-entity-place',
+      `latitude: ${loc.lat}; longitude: ${loc.lon};`);
     entity.setAttribute('look-at', '[gps-camera]');
 
-    // 텍스트 배경판
-    const bg = document.createElement('a-plane');
-    bg.setAttribute('color', '#050A0E');
-    bg.setAttribute('opacity', '0.85');
-    bg.setAttribute('width', '2.5');
-    bg.setAttribute('height', '0.9');
-    bg.setAttribute('position', '0 0 0');
+    // 거리에 따라 높이 조절 (가까울수록 낮게)
+    const heightY = dist < 100 ? 2 : dist < 300 ? 3 : 4;
 
-    // 위치 이름
+    // ── 장소명 배경판 ──
+    const nameBg = document.createElement('a-plane');
+    nameBg.setAttribute('color', '#000000');
+    nameBg.setAttribute('opacity', '0.75');
+    nameBg.setAttribute('width', '3.2');
+    nameBg.setAttribute('height', '0.75');
+    nameBg.setAttribute('position', `0 ${heightY + 0.85} 0`);
+    nameBg.setAttribute('material', 'shader: flat;');
+
+    // ── 장소명 텍스트 ──
     const nameText = document.createElement('a-text');
     nameText.setAttribute('value', loc.name);
-    nameText.setAttribute('color', '#00FFB2');
+    nameText.setAttribute('color', '#FFFFFF');
     nameText.setAttribute('align', 'center');
-    nameText.setAttribute('width', '5');
-    nameText.setAttribute('position', '0 0.18 0.01');
+    nameText.setAttribute('width', '6');
+    nameText.setAttribute('position', `0 ${heightY + 0.85} 0.01`);
     nameText.setAttribute('font', 'https://cdn.aframe.io/fonts/mozillavr.fnt');
+    nameText.setAttribute('shader', 'msdf');
 
-    // 거리 텍스트
+    // ── 거리 표시 (작게) ──
     const distText = document.createElement('a-text');
     distText.setAttribute('value', `${dist}m`);
-    distText.setAttribute('color', '#E8F4F0');
+    distText.setAttribute('color', '#FFD600');
     distText.setAttribute('align', 'center');
-    distText.setAttribute('width', '3');
-    distText.setAttribute('position', '0 -0.15 0.01');
+    distText.setAttribute('width', '3.5');
+    distText.setAttribute('position', `0 ${heightY + 0.35} 0.01`);
+    distText.setAttribute('font', 'https://cdn.aframe.io/fonts/mozillavr.fnt');
 
-    // 펄스 링
-    const ring = document.createElement('a-ring');
-    ring.setAttribute('color', '#00FFB2');
-    ring.setAttribute('radius-inner', '0.4');
-    ring.setAttribute('radius-outer', '0.45');
-    ring.setAttribute('opacity', '0.6');
-    ring.setAttribute('position', '0 -0.65 0');
-    ring.setAttribute('animation', 'property: scale; to: 1.5 1.5 1; dur: 1500; easing: easeOutQuad; loop: true; dir: alternate');
+    // ── 노란 화살표 (▼) ──
+    // 삼각형: cone으로 표현, 끝이 아래를 향하도록 rotateX(180)
+    const arrowCone = document.createElement('a-cone');
+    arrowCone.setAttribute('color', '#FFD600');
+    arrowCone.setAttribute('radius-bottom', '0');
+    arrowCone.setAttribute('radius-top', '0.3');
+    arrowCone.setAttribute('height', '0.6');
+    arrowCone.setAttribute('position', `0 ${heightY} 0`);
+    arrowCone.setAttribute('rotation', '180 0 0');  // 뒤집어서 아래 방향
+    arrowCone.setAttribute('material', 'shader: flat; color: #FFD600;');
+    // 펄스 애니메이션
+    arrowCone.setAttribute('animation',
+      'property: position; ' +
+      `from: 0 ${heightY} 0; ` +
+      `to: 0 ${heightY - 0.25} 0; ` +
+      'dur: 800; easing: easeInOutSine; loop: true; dir: alternate;');
 
-    // 수직선 (땅 방향)
-    const line = document.createElement('a-cylinder');
-    line.setAttribute('color', '#00FFB2');
-    line.setAttribute('opacity', '0.3');
-    line.setAttribute('radius', '0.015');
-    line.setAttribute('height', '1.2');
-    line.setAttribute('position', '0 -1.05 0');
+    // ── 수직 점선 (땅 방향) ──
+    const stem = document.createElement('a-cylinder');
+    stem.setAttribute('color', '#FFD600');
+    stem.setAttribute('opacity', '0.35');
+    stem.setAttribute('radius', '0.03');
+    stem.setAttribute('height', `${heightY - 0.3}`);
+    stem.setAttribute('position', `0 ${(heightY - 0.3) / 2} 0`);
+    stem.setAttribute('material', 'shader: flat;');
 
-    entity.appendChild(bg);
+    entity.appendChild(nameBg);
     entity.appendChild(nameText);
     entity.appendChild(distText);
-    entity.appendChild(ring);
-    entity.appendChild(line);
+    entity.appendChild(arrowCone);
+    entity.appendChild(stem);
 
     arScene.appendChild(entity);
   });
 }
 
 // ── HUD 업데이트 ──────────────────────────────────────────────
-function updateHUD(nearbyLocs) {
-  document.getElementById('location-count').textContent =
-    `탐지된 위치 : ${nearbyLocs.length}곳`;
+function updateHUD(nearby) {
+  document.getElementById('count-label').textContent =
+    nearby.length > 0 ? `탐지된 위치 : ${nearby.length}곳` : '탐지된 위치 없음';
   document.getElementById('gps-coords').textContent =
-    `위도 ${userLat.toFixed(5)} / 경도 ${userLon.toFixed(5)}`;
+    `위도 ${userLat.toFixed(6)}  /  경도 ${userLon.toFixed(6)}`;
   document.getElementById('status-text').textContent =
-    nearbyLocs.length > 0 ? `${nearbyLocs.length}개 위치 탐지됨` : 'GPS 추적 중...';
+    nearby.length > 0 ? `${nearby.length}개 위치 표시 중 (600m 이내)` : '600m 이내 위치 없음';
 
-  const list = document.getElementById('nearby-list');
-  list.innerHTML = nearbyLocs.map(loc => {
-    const dist = Math.round(haversineDistance(userLat, userLon, loc.lat, loc.lon));
-    return `<div class="nearby-item">
-      <span class="nearby-name">${loc.name}</span>
-      <span class="nearby-dist">${dist}m</span>
-    </div>`;
-  }).join('');
+  if (nearby.length === 0) {
+    document.getElementById('nearby-list').innerHTML =
+      `<div style="
+        text-align:center; padding:16px 12px;
+        font-family:'Noto Sans KR',sans-serif;
+        font-size:13px; font-weight:700;
+        color:rgba(255,255,255,0.55);
+        border:1px dashed rgba(255,214,0,0.25);
+        border-radius:8px; line-height:1.6;
+      ">현재 위치 주변에<br/>등록된 정보가 없습니다.</div>`;
+  } else {
+    document.getElementById('nearby-list').innerHTML = nearby.map(loc => {
+      const dist = Math.round(distance(userLat, userLon, loc.lat, loc.lon));
+      return `<div class="nearby-item">
+        <span class="nearby-name">${loc.name}</span>
+        <span class="nearby-dist">${dist}m</span>
+      </div>`;
+    }).join('');
+  }
 }
 
-// ── GPS 감시 ──────────────────────────────────────────────────
+// ── GPS 감시 루프 ─────────────────────────────────────────────
 function startGPSWatch() {
   navigator.geolocation.watchPosition(
     async (pos) => {
       userLat = pos.coords.latitude;
-      userLon = pos.coords.longitude;
+      userLon  = pos.coords.longitude;
 
-      const nearby = locations.filter(loc => {
-        const d = haversineDistance(userLat, userLon, loc.lat, loc.lon);
-        return d <= SEARCH_RADIUS;
-      }).sort((a, b) => {
-        return haversineDistance(userLat, userLon, a.lat, a.lon) -
-               haversineDistance(userLat, userLon, b.lat, b.lon);
-      });
+      const nearby = locations
+        .filter(loc => distance(userLat, userLon, loc.lat, loc.lon) <= SEARCH_RADIUS)
+        .sort((a, b) =>
+          distance(userLat, userLon, a.lat, a.lon) -
+          distance(userLat, userLon, b.lat, b.lon));
 
       updateHUD(nearby);
       addARMarkers(nearby);
@@ -419,13 +434,11 @@ function startGPSWatch() {
   );
 }
 
-// ── iOS 방향 센서 권한 ─────────────────────────────────────────
+// ── iOS 방향 센서 권한 ────────────────────────────────────────
 async function requestIOSOrientation() {
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
-    try {
-      await DeviceOrientationEvent.requestPermission();
-    } catch(e) {}
+    try { await DeviceOrientationEvent.requestPermission(); } catch(e) {}
   }
 }
 
@@ -438,15 +451,15 @@ async function requestPermissions() {
   errEl.style.display = 'none';
 
   try {
-    // 1. 카메라 권한
+    // 1. 카메라
     await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
 
-    // 2. GPS 권한 (첫 위치 확보)
+    // 2. GPS 첫 위치 확보
     await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           userLat = pos.coords.latitude;
-          userLon = pos.coords.longitude;
+          userLon  = pos.coords.longitude;
           resolve();
         },
         reject,
@@ -463,7 +476,6 @@ async function requestPermissions() {
     // 5. AR 시작
     document.getElementById('permission-screen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
-
     buildARScene();
     startGPSWatch();
 
@@ -474,7 +486,7 @@ async function requestPermissions() {
     } else if (e.name === 'NotAllowedError') {
       errEl.textContent = '📷 카메라 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
     } else {
-      errEl.textContent = `오류: ${e.message || e}`;
+      errEl.textContent = `오류가 발생했습니다: ${e.message || e}`;
     }
     btn.textContent = '다시 시도';
     btn.disabled = false;
