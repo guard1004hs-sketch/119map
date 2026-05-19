@@ -23,10 +23,13 @@
       font-family:'Noto Sans KR',sans-serif; overflow:hidden;
     }
     .camp-badge {
-      font-family:'Noto Sans KR',sans-serif; font-size:15px; font-weight:800; color:#FFD400;
+      font-family:'Noto Sans KR',sans-serif; 
+      font-size:22.5px; /* 기존 15px의 1.5배 */
+      font-weight:800; color:#FFD400;
       letter-spacing:1.5px; margin-bottom:18px;
       border:1.5px solid rgba(255,212,0,0.75); border-radius:100px;
-      padding:6px 20px; background:rgba(255,212,0,0.10);
+      padding:8px 24px; /* 글꼴 크기에 맞게 여백 조정 */
+      background:rgba(255,212,0,0.10);
       text-shadow:0 0 12px rgba(255,212,0,0.70); box-shadow:0 0 18px rgba(255,212,0,0.20);
     }
     .logo-icon { font-size:44px; margin-bottom:12px; animation:float 3s ease-in-out infinite; }
@@ -772,7 +775,7 @@ function startGPSWatch() {
 // ── 나침반 ────────────────────────────────────────────────────
 function startCompass() {
   let rawHeading = 0;
-  const SMOOTH = 0.08; // 낮을수록 둔감 (기존 ~0.16 대비 절반)
+  const SMOOTH = 0.04; // 낮을수록 둔감 (기존 ~0.16 대비 절반)
   const handler=e=>{
     let raw;
     if (e.webkitCompassHeading!=null) raw=e.webkitCompassHeading;
