@@ -595,15 +595,7 @@ function render() {
       const dist=Math.round(calcDist(userLat,userLon,loc.lat,loc.lon));
       const bearing=calcBearing(userLat,userLon,loc.lat,loc.lon);
       const diff=angleDiff(bearing,compassHeading);
-      // 히스테리시스: 진입 55°, 이탈 65° → 경계 부근 깜빡임 방지
-      const locKey = loc.name;
-      const wasVisible = visibleSet.has(locKey);
-      const enterThreshold = halfFOV * 0.92;  // 55.2°
-      const exitThreshold  = halfFOV * 1.08;  // 64.8°
-      const absDiff = Math.abs(diff);
-      if (!wasVisible && absDiff > enterThreshold) return;
-      if (wasVisible  && absDiff > exitThreshold)  { visibleSet.delete(locKey); return; }
-      visibleSet.add(locKey);
+      if (Math.abs(diff)>halfFOV) return;
       if (dist<=CLOSE_RADIUS) {
         drawCloseMarker(ctx,W,H,loc,dist,diff,halfFOV,false);
       } else {
