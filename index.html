@@ -23,20 +23,17 @@
       font-family:'Noto Sans KR',sans-serif; overflow:hidden;
     }
     .camp-badge {
-      font-family:'Noto Sans KR',sans-serif; 
-      font-size:22.5px; /* 기존 15px의 1.5배 */
-      font-weight:800; color:#FFD400;
+      font-family:'Noto Sans KR',sans-serif; font-size:22px; font-weight:800; color:#FFD400;
       letter-spacing:1.5px; margin-bottom:18px;
       border:1.5px solid rgba(255,212,0,0.75); border-radius:100px;
-      padding:8px 24px; /* 글꼴 크기에 맞게 여백 조정 */
-      background:rgba(255,212,0,0.10);
+      padding:6px 20px; background:rgba(255,212,0,0.10);
       text-shadow:0 0 12px rgba(255,212,0,0.70); box-shadow:0 0 18px rgba(255,212,0,0.20);
     }
     .logo-icon { font-size:44px; margin-bottom:12px; animation:float 3s ease-in-out infinite; }
     @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
     @keyframes glowPulse { 0%,100%{box-shadow:0 0 22px rgba(255,212,0,0.40),0 4px 18px rgba(0,0,0,0.45)} 50%{box-shadow:0 0 40px rgba(255,212,0,0.80),0 4px 18px rgba(0,0,0,0.45)} }
-    .perm-title { font-size:28px; font-weight:900; color:#FFFFFF; text-align:center; line-height:1.25; margin-bottom:8px; text-shadow:0 2px 0 rgba(0,0,0,0.9), 0 0 24px rgba(255,255,255,0.15); }
-    .perm-title em { color:#FFFFFF; font-style:normal; display:block; font-size:22px; font-weight:900; text-shadow:0 2px 0 rgba(0,0,0,0.9), 0 0 20px rgba(255,255,255,0.20); }
+    .perm-title { font-size:42px; font-weight:900; color:#FFFFFF; text-align:center; line-height:1.15; margin-bottom:10px; text-shadow:0 3px 0 rgba(0,0,0,0.9), 0 0 30px rgba(255,255,255,0.15); letter-spacing:-1px; }
+    .perm-title em { color:rgba(255,255,255,0.88); font-style:normal; display:block; font-size:16px; font-weight:500; letter-spacing:3px; text-transform:uppercase; margin-top:6px; text-shadow:0 1px 6px rgba(0,0,0,0.8); }
     .perm-sub { font-size:13px; color:rgba(255,255,255,0.92); text-align:center; line-height:1.85; margin-bottom:20px; text-shadow:0 1px 6px rgba(0,0,0,1); font-weight:500; }
     .perm-section-label {
       width:100%; max-width:300px; font-size:12px; font-weight:700;
@@ -451,6 +448,7 @@ const LOCATIONS_URL = 'locations.json';
 let userLat = null, userLon = null, gpsAccuracy = null;
 let compassHeading = 0;
 let locations = [], nearby = [];
+const visibleSet = new Set(); // 마커 가시성 히스테리시스
 let navTarget = null;        // 선택된 목적지
 let imgCache  = {};        // 로드된 Image 객체
 
@@ -595,11 +593,11 @@ function render() {
       const dist=Math.round(calcDist(userLat,userLon,loc.lat,loc.lon));
       const bearing=calcBearing(userLat,userLon,loc.lat,loc.lon);
       const diff=angleDiff(bearing,compassHeading);
-      // 히스테리시스: 진입 55°, 이탈 65° → 경계 부근 깜빡임 방지
+      // 히스테리시스: 진입 30°, 이탈 34° → 경계 깜빡임 방지
       const locKey = loc.name;
       const wasVisible = visibleSet.has(locKey);
-      const enterThreshold = halfFOV * 0.92;  // 55.2°
-      const exitThreshold  = halfFOV * 1.08;  // 64.8°
+      const enterThreshold = halfFOV;          // 30° - 정상 FOV
+      const exitThreshold  = halfFOV * 1.15;   // 34.5° - 이탈은 여유있게
       const absDiff = Math.abs(diff);
       if (!wasVisible && absDiff > enterThreshold) return;
       if (wasVisible  && absDiff > exitThreshold)  { visibleSet.delete(locKey); return; }
@@ -783,7 +781,7 @@ function startGPSWatch() {
 // ── 나침반 ────────────────────────────────────────────────────
 function startCompass() {
   let rawHeading = 0;
-  const SMOOTH = 0.04; // 낮을수록 둔감 (기존 0.08에서 절반으로 감소)
+  const SMOOTH = 0.04; // 매우 둔감 - 흔들림 최소화
   const handler=e=>{
     let raw;
     if (e.webkitCompassHeading!=null) raw=e.webkitCompassHeading;
@@ -797,15 +795,8 @@ function startCompass() {
     rawHeading = (rawHeading + 360) % 360;
     compassHeading = rawHeading;
   };
-
-  // 기기 환경에 맞춰 하나의 이벤트만 등록 (중복 실행 방지)
-  if ('ondeviceorientationabsolute' in window) {
-    // 안드로이드 크롬 등 최신 브라우저용 절대 좌표
-    window.addEventListener('deviceorientationabsolute', handler, true);
-  } else {
-    // iOS 사파리 및 구형 브라우저용 일반 좌표
-    window.addEventListener('deviceorientation', handler, true);
-  }
+  window.addEventListener('deviceorientationabsolute',handler,true);
+  window.addEventListener('deviceorientation',handler,true);
 }
 
 // ── 권한 요청 → AR 시작 ──────────────────────────────────────
