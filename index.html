@@ -772,25 +772,43 @@ function startGPSWatch() {
   );
 }
 
-// ── 나침반 ────────────────────────────────────────────────────
+// ── 나침반 (이벤트 중복 방지 및 스무딩 적용) ────────────────────────
 function startCompass() {
   let rawHeading = 0;
-  const SMOOTH = 0.04; // 낮을수록 둔감 (기존 ~0.16 대비 절반)
-  const handler=e=>{
+  const SMOOTH = 0.04; // 부드러운 이동을 위한 값 (유지)
+
+  const handler = e => {
     let raw;
-    if (e.webkitCompassHeading!=null) raw=e.webkitCompassHeading;
-    else if (e.alpha!=null) raw=(360-e.alpha)%360;
-    else return;
-    // 각도 최단 경로로 스무딩
+    // iOS의 경우 webkitCompassHeading 사용
+    if (e.webkitCompassHeading != null) {
+      raw = e.webkitCompassHeading;
+    } 
+    // Android의 경우 alpha 값 사용
+    else if (e.alpha != null) {
+      raw = (360 - e.alpha) % 360;
+    } 
+    else {
+      return;
+    }
+
+    // 각도 최단 경로로 스무딩 (떨림 방지)
     let diff = raw - rawHeading;
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
+    
     rawHeading += diff * SMOOTH;
     rawHeading = (rawHeading + 360) % 360;
     compassHeading = rawHeading;
   };
-  window.addEventListener('deviceorientationabsolute',handler,true);
-  window.addEventListener('deviceorientation',handler,true);
+
+  // 기기 환경에 맞춰 하나의 이벤트만 등록 (중복 실행 방지)
+  if ('ondeviceorientationabsolute' in window) {
+    // 안드로이드 크롬 등 최신 브라우저용 절대 좌표
+    window.addEventListener('deviceorientationabsolute', handler, true);
+  } else {
+    // iOS 사파리 및 구형 브라우저용 일반 좌표
+    window.addEventListener('deviceorientation', handler, true);
+  }
 }
 
 // ── 권한 요청 → AR 시작 ──────────────────────────────────────
