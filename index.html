@@ -595,7 +595,15 @@ function render() {
       const dist=Math.round(calcDist(userLat,userLon,loc.lat,loc.lon));
       const bearing=calcBearing(userLat,userLon,loc.lat,loc.lon);
       const diff=angleDiff(bearing,compassHeading);
-      if (Math.abs(diff)>halfFOV) return;
+      // 히스테리시스: 진입 55°, 이탈 65° → 경계 부근 깜빡임 방지
+      const locKey = loc.name;
+      const wasVisible = visibleSet.has(locKey);
+      const enterThreshold = halfFOV * 0.92;  // 55.2°
+      const exitThreshold  = halfFOV * 1.08;  // 64.8°
+      const absDiff = Math.abs(diff);
+      if (!wasVisible && absDiff > enterThreshold) return;
+      if (wasVisible  && absDiff > exitThreshold)  { visibleSet.delete(locKey); return; }
+      visibleSet.add(locKey);
       if (dist<=CLOSE_RADIUS) {
         drawCloseMarker(ctx,W,H,loc,dist,diff,halfFOV,false);
       } else {
@@ -772,30 +780,19 @@ function startGPSWatch() {
   );
 }
 
-// ── 나침반 (이벤트 중복 방지 및 스무딩 적용) ────────────────────────
+// ── 나침반 ────────────────────────────────────────────────────
 function startCompass() {
   let rawHeading = 0;
-  const SMOOTH = 0.04; // 부드러운 이동을 위한 값 (유지)
-
-  const handler = e => {
+  const SMOOTH = 0.04; // 낮을수록 둔감 (기존 0.08에서 절반으로 감소)
+  const handler=e=>{
     let raw;
-    // iOS의 경우 webkitCompassHeading 사용
-    if (e.webkitCompassHeading != null) {
-      raw = e.webkitCompassHeading;
-    } 
-    // Android의 경우 alpha 값 사용
-    else if (e.alpha != null) {
-      raw = (360 - e.alpha) % 360;
-    } 
-    else {
-      return;
-    }
-
-    // 각도 최단 경로로 스무딩 (떨림 방지)
+    if (e.webkitCompassHeading!=null) raw=e.webkitCompassHeading;
+    else if (e.alpha!=null) raw=(360-e.alpha)%360;
+    else return;
+    // 각도 최단 경로로 스무딩
     let diff = raw - rawHeading;
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
-    
     rawHeading += diff * SMOOTH;
     rawHeading = (rawHeading + 360) % 360;
     compassHeading = rawHeading;
