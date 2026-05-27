@@ -714,19 +714,7 @@ async function requestPermissions() {
 // gpsAccuracy 전역 변수
 let gpsAccuracy = 0;
 
-// GPS watch 래핑 (accuracy 기록용)
-const _origStartGPSWatch = startGPSWatch;
-function startGPSWatch() {
-  navigator.geolocation.watchPosition(
-    pos => {
-      userLat = pos.coords.latitude;
-      userLon = pos.coords.longitude;
-      gpsAccuracy = pos.coords.accuracy || 0;
-    },
-    null,
-    { enableHighAccuracy: true, maximumAge: 2000 }
-  );
-}
+// gpsAccuracy는 기본값 0 사용
 
 // 동의 팝업
 function showConsentPopup() {
