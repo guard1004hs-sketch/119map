@@ -848,98 +848,73 @@ function startCompass() {
 // ── 권한 동의 팝업 ────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════
-// 전체지도 — GPS 실시간 위치 표시
+// 전체지도 — GPS 실시간 위치 표시 (삼각형 마커 + 방향)
 // ══════════════════════════════════════════════════════════════
 
-// ── 지도 바운더리 설정 ─────────────────────────────────────────
-// 원본 이미지(1622×970)의 네 귀퉁이 GPS 좌표
-// ★ 실제 현장에서 구글맵으로 정확히 측정 후 수정 권장
+// ── 앵커 기반 선형 변환 파라미터 (GPS → 원본픽셀) ───────────
+// 4개 체험장 좌표와 이미지 픽셀 위치로 최소제곱 계산
+const MAP_PX_P = [148900.57, -310712.16, 34570578.12]; // px = a*lat + b*lon + c
+const MAP_PY_P = [160761.03,   45225.45, -11800374.57]; // py = d*lat + e*lon + f
+const MAP_ORIG_W = 1622, MAP_ORIG_H = 970;  // 원본 이미지 크기
+// 90도 회전 후 이미지 크기 (HTML에 들어간 것)
+const ROT_IMG_W = MAP_ORIG_H; // 970
+const ROT_IMG_H = MAP_ORIG_W; // 1622
+
+// ── 바운더리 (이미지 범위 내 GPS 영역) ───────────────────────
 const MAP_BOUNDS = {
-  // 원본 이미지 기준 (회전 전)
-  // 좌상단 픽셀(0,0) → NW 방향
-  nw: { lat: 37.10630, lon: 129.037505 },   // 이미지 좌상단 GPS
-  // 우상단 픽셀(W,0)
-  ne: { lat: 37.10630, lon: 129.04450 },   // 이미지 우상단 GPS
-  // 좌하단 픽셀(0,H)
-  sw: { lat: 37.10130, lon: 129.03750 },   // 이미지 좌하단 GPS
-  // 우하단 픽셀(W,H)
-  se: { lat: 37.10130, lon: 129.04450 },   // 이미지 우하단 GPS
+  latMin: 37.1014, latMax: 37.1068,
+  lonMin: 129.0373, lonMax: 129.0450,
 };
 
-// 원본 이미지 크기
-const MAP_W = 1622, MAP_H = 970;
-
-// ── 체험장 마커 (원본 이미지 픽셀 좌표) ──────────────────────
-// 픽셀 좌표는 지도 이미지를 보고 직접 측정한 값
+// ── 체험장 마커 ───────────────────────────────────────────────
 const MAP_MARKERS = [
-  { name:'생존수영',   px:230,  py:340, color:'#FFD400' },
-  { name:'소화기체험', px:870,  py:185, color:'#FFD400' },
-  { name:'심폐소생술', px:640,  py:345, color:'#FFD400' },
-  { name:'주수체험',   px:1310, py:490, color:'#FFD400' },
+  { name:'생존수영',   lat:37.1028735, lon:129.0424248 },
+  { name:'주수체험',   lat:37.1042983, lon:129.0399942 },
+  { name:'심폐소생술', lat:37.1039223, lon:129.0406365 },
+  { name:'소화기체험', lat:37.1026798, lon:129.0400689 },
 ];
 
-// ── 바이리니어 GPS→픽셀 변환 ─────────────────────────────────
-// 4개 코너를 이용한 보정 (이미지가 직사각형이 아닌 원근 왜곡 고려)
-function gpsToOrigPixel(lat, lon) {
-  // 단순 이중 선형 보간
-  const { nw, ne, sw, se } = MAP_BOUNDS;
-  // 위도 기준 y 비율 (위 = 높은 위도)
-  const latRange = ((nw.lat + ne.lat) / 2) - ((sw.lat + se.lat) / 2);
-  const lonRange = ((ne.lon + se.lon) / 2) - ((nw.lon + sw.lon) / 2);
-  const latMid   = (nw.lat + ne.lat + sw.lat + se.lat) / 4;
-  const lonMid   = (nw.lon + ne.lon + sw.lon + se.lon) / 4;
-
-  // 정규화 (0~1)
-  const tx = (lon - (nw.lon + sw.lon) / 2) / lonRange;
-  const ty = 1 - (lat - (sw.lat + se.lat) / 2) / latRange;
-
-  return {
-    ox: tx * MAP_W,
-    oy: ty * MAP_H
-  };
+// ── GPS → 원본픽셀 변환 ───────────────────────────────────────
+function gpsToOrigPx(lat, lon) {
+  const ox = MAP_PX_P[0]*lat + MAP_PX_P[1]*lon + MAP_PX_P[2];
+  const oy = MAP_PY_P[0]*lat + MAP_PY_P[1]*lon + MAP_PY_P[2];
+  return { ox, oy };
 }
 
-// 원본 픽셀 → 90도 회전된 이미지 픽셀
-// PIL rotate(-90, expand=True): new_x=orig_y, new_y=MAP_W-1-orig_x
+// 원본픽셀 → 90도 회전 이미지픽셀
+// PIL rotate(-90, expand=True): rx=oy, ry=MAP_ORIG_W-1-ox
 function origToRotPx(ox, oy) {
-  return { rx: oy, ry: MAP_W - 1 - ox };
+  return { rx: oy, ry: MAP_ORIG_W - 1 - ox };
 }
 
-// 90도 회전된 이미지 크기: (MAP_H × MAP_W) = (970 × 1622)
-const ROT_IMG_W = MAP_H, ROT_IMG_H = MAP_W;
-
-// 사용자가 바운더리 안에 있는지 확인
 function isInBounds(lat, lon) {
-  const { nw, se } = MAP_BOUNDS;
-  const minLat = Math.min(nw.lat, se.lat, MAP_BOUNDS.sw.lat, MAP_BOUNDS.ne.lat);
-  const maxLat = Math.max(nw.lat, se.lat, MAP_BOUNDS.sw.lat, MAP_BOUNDS.ne.lat);
-  const minLon = Math.min(nw.lon, se.lon, MAP_BOUNDS.sw.lon, MAP_BOUNDS.ne.lon);
-  const maxLon = Math.max(nw.lon, se.lon, MAP_BOUNDS.sw.lon, MAP_BOUNDS.ne.lon);
-  return lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+  return lat >= MAP_BOUNDS.latMin && lat <= MAP_BOUNDS.latMax &&
+         lon >= MAP_BOUNDS.lonMin && lon <= MAP_BOUNDS.lonMax;
 }
 
-// ── 핀치줌 + 패닝 상태 ────────────────────────────────────────
+// ── 핀치줌/패닝 상태 ──────────────────────────────────────────
 let mapScale = 1, mapOffX = 0, mapOffY = 0;
 let mapAnimId = null;
-let mapNeedsRedraw = false;
 
 function applyMapTransform() {
   const inner = document.getElementById('map-inner');
-  if (inner) inner.style.transform = `translate(${mapOffX}px,${mapOffY}px) scale(${mapScale})`;
+  if (inner) inner.style.transform =
+    `translate(${mapOffX}px,${mapOffY}px) scale(${mapScale})`;
 }
 
 function mapRecenter() {
   if (userLat === null) return;
   const img = document.getElementById('map-img');
-  if (!img || !img.complete) return;
-  const { ox, oy } = gpsToOrigPixel(userLat, userLon);
-  const { rx, ry } = origToRotPx(ox, oy);
-  const dispW = img.clientWidth, dispH = img.clientHeight;
-  const scaleX = dispW / ROT_IMG_W, scaleY = dispH / ROT_IMG_H;
-  const cx = rx * scaleX, cy = ry * scaleY;
   const container = document.getElementById('map-container');
-  mapOffX = container.clientWidth  / 2 - cx * mapScale;
-  mapOffY = container.clientHeight / 2 - cy * mapScale;
+  if (!img || !img.complete) return;
+  const { ox, oy } = gpsToOrigPx(userLat, userLon);
+  const { rx, ry } = origToRotPx(ox, oy);
+  const scaleX = img.clientWidth  / ROT_IMG_W;
+  const scaleY = img.clientHeight / ROT_IMG_H;
+  const cx = rx * scaleX * mapScale;
+  const cy = ry * scaleY * mapScale;
+  mapOffX = container.clientWidth  / 2 - cx;
+  mapOffY = container.clientHeight / 2 - cy;
   applyMapTransform();
 }
 
@@ -951,43 +926,45 @@ function drawMapOverlay() {
 
   const dispW = img.clientWidth;
   const dispH = img.clientHeight;
+  if (!dispW || !dispH) return;
+
   if (canvas.width !== dispW || canvas.height !== dispH) {
-    canvas.width  = dispW;
-    canvas.height = dispH;
+    canvas.width = dispW; canvas.height = dispH;
   }
+
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, dispW, dispH);
 
   const scaleX = dispW / ROT_IMG_W;
   const scaleY = dispH / ROT_IMG_H;
 
-  // ── 체험장 마커 ──
+  // ── 체험장 마커 (골드 원) ─────────────────────────────────
   MAP_MARKERS.forEach(m => {
-    const { rx, ry } = origToRotPx(m.px, m.py);
+    const { ox, oy } = gpsToOrigPx(m.lat, m.lon);
+    const { rx, ry } = origToRotPx(ox, oy);
     const cx = rx * scaleX, cy = ry * scaleY;
+    if (cx < 0 || cx > dispW || cy < 0 || cy > dispH) return;
 
     ctx.beginPath();
-    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-    ctx.fillStyle = m.color;
+    ctx.arc(cx, cy, 9, 0, Math.PI*2);
+    ctx.fillStyle = '#FFD400';
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    ctx.font = 'bold 10px Noto Sans KR, sans-serif';
+    ctx.font = 'bold 11px sans-serif';
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.lineWidth = 3;
-    ctx.strokeText(m.name, cx + 11, cy + 4);
+    ctx.strokeText(m.name, cx+12, cy+4);
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(m.name, cx + 11, cy + 4);
+    ctx.fillText(m.name, cx+12, cy+4);
   });
 
-  // ── 현재 위치 마커 ──
-  const dot  = document.getElementById('map-gps-dot');
-  const txt  = document.getElementById('map-gps-text');
-  const oob  = document.getElementById('map-out-of-bounds');
-  const hdr  = document.getElementById('map-header-right') ||
-               document.getElementById('map-coord-display');
+  // ── 현재 위치 (삼각형 + 방향 화살표) ────────────────────────
+  const dot = document.getElementById('map-gps-dot');
+  const txt = document.getElementById('map-gps-text');
+  const oob = document.getElementById('map-out-of-bounds');
 
   if (userLat === null) {
     if (dot) dot.classList.remove('active');
@@ -1002,59 +979,83 @@ function drawMapOverlay() {
   const inBounds = isInBounds(userLat, userLon);
   if (oob) oob.style.display = inBounds ? 'none' : 'block';
 
-  if (inBounds) {
-    const { ox, oy } = gpsToOrigPixel(userLat, userLon);
-    const { rx, ry } = origToRotPx(ox, oy);
-    const cx = rx * scaleX;
-    const cy = ry * scaleY;
+  if (!inBounds) return;
 
-    // 정확도 원
-    if (gpsAccuracy) {
-      const metersPerPixel = 111320 / (dispH / ROT_IMG_H * MAP_H /
-        (MAP_BOUNDS.nw.lat - MAP_BOUNDS.sw.lat));
-      const r = Math.min(gpsAccuracy / metersPerPixel, dispW * 0.3);
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,200,255,0.10)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,200,255,0.30)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+  const { ox, oy } = gpsToOrigPx(userLat, userLon);
+  const { rx, ry } = origToRotPx(ox, oy);
+  const cx = rx * scaleX;
+  const cy = ry * scaleY;
 
-    // 파동 링
-    const t = Date.now() / 800;
-    const pulse = 14 + Math.sin(t) * 5;
+  if (cx < 0 || cx > dispW || cy < 0 || cy > dispH) return;
+
+  // 나침반 방향 (compassHeading: 0=북, 90=동...)
+  // 회전된 이미지에서 북쪽 방향 보정
+  // 이미지가 90도 회전되어 있으므로 heading에서 90도 보정
+  const heading = ((compassHeading - 90) * Math.PI / 180);
+
+  // 정확도 원
+  if (gpsAccuracy && gpsAccuracy < 100) {
+    const mpp = 0.000009 * 111320; // 대략적 m/px
+    const r = Math.max(8, Math.min(gpsAccuracy * scaleX * 12, dispW * 0.25));
     ctx.beginPath();
-    ctx.arc(cx, cy, pulse, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(0,200,255,${0.25 + Math.sin(t) * 0.15})`;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // 위치 점
-    ctx.beginPath();
-    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
-    ctx.fillStyle = '#00C8FF';
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0,200,255,0.10)';
     ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(0,200,255,0.30)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-
-    // 레이블
-    ctx.font = 'bold 11px Noto Sans KR, sans-serif';
-    ctx.strokeStyle = 'rgba(0,0,0,0.90)';
-    ctx.lineWidth = 3;
-    ctx.strokeText('현재위치', cx + 13, cy - 6);
-    ctx.fillStyle = '#00C8FF';
-    ctx.fillText('현재위치', cx + 13, cy - 6);
   }
+
+  // 파동 링
+  const t = Date.now() / 700;
+  const pulse = 16 + Math.sin(t) * 5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pulse, 0, Math.PI*2);
+  ctx.strokeStyle = `rgba(0,200,255,${0.20 + Math.abs(Math.sin(t))*0.20})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 삼각형 (방향 있는 위치 마커)
+  const size = 18;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(heading);
+
+  ctx.beginPath();
+  ctx.moveTo(0, -size);           // 앞 꼭짓점
+  ctx.lineTo(-size*0.65, size*0.7);  // 좌 하단
+  ctx.lineTo(0, size*0.35);          // 중앙 홈
+  ctx.lineTo(size*0.65, size*0.7);   // 우 하단
+  ctx.closePath();
+
+  // 삼각형 채우기 (그라디언트)
+  const grad = ctx.createLinearGradient(0, -size, 0, size);
+  grad.addColorStop(0, '#00E5FF');
+  grad.addColorStop(1, '#0088CC');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // 중심 흰 점
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI*2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+
+  ctx.restore();
+
+  // 레이블
+  ctx.font = 'bold 12px sans-serif';
+  ctx.strokeStyle = 'rgba(0,0,0,0.90)';
+  ctx.lineWidth = 3;
+  ctx.strokeText('현재위치', cx+22, cy-10);
+  ctx.fillStyle = '#00E5FF';
+  ctx.fillText('현재위치', cx+22, cy-10);
 }
 
-// ── 지도 애니메이션 루프 ──────────────────────────────────────
+// ── 애니메이션 루프 ───────────────────────────────────────────
 function mapLoop() {
   drawMapOverlay();
   if (document.getElementById('map-screen').style.display !== 'none') {
@@ -1062,26 +1063,24 @@ function mapLoop() {
   }
 }
 
-// ── 핀치줌 & 패닝 이벤트 ────────────────────────────────────
+// ── 핀치줌 & 패닝 ────────────────────────────────────────────
 function initMapGestures() {
   const container = document.getElementById('map-container');
   if (!container) return;
 
-  let lastDist = 0, lastMidX = 0, lastMidY = 0;
-  let isDragging = false, dragStartX = 0, dragStartY = 0;
-  let startOffX = 0, startOffY = 0;
+  let lastDist=0, lastMidX=0, lastMidY=0;
+  let isDragging=false, dragStartX=0, dragStartY=0, startOffX=0, startOffY=0;
 
   container.addEventListener('touchstart', e => {
     if (e.touches.length === 2) {
-      const dx = e.touches[1].clientX - e.touches[0].clientX;
-      const dy = e.touches[1].clientY - e.touches[0].clientY;
-      lastDist = Math.hypot(dx, dy);
+      lastDist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY);
       lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       lastMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     } else if (e.touches.length === 1) {
       isDragging = true;
-      dragStartX = e.touches[0].clientX;
-      dragStartY = e.touches[0].clientY;
+      dragStartX = e.touches[0].clientX; dragStartY = e.touches[0].clientY;
       startOffX = mapOffX; startOffY = mapOffY;
     }
   }, { passive: true });
@@ -1089,21 +1088,18 @@ function initMapGestures() {
   container.addEventListener('touchmove', e => {
     if (e.touches.length === 2) {
       e.preventDefault();
-      const dx = e.touches[1].clientX - e.touches[0].clientX;
-      const dy = e.touches[1].clientY - e.touches[0].clientY;
-      const dist = Math.hypot(dx, dy);
+      const dist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY);
       const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       const rect = container.getBoundingClientRect();
       const ratio = dist / lastDist;
-      const newScale = Math.max(0.5, Math.min(5, mapScale * ratio));
-      // 줌 중심점 유지
+      const newScale = Math.max(0.5, Math.min(6, mapScale * ratio));
       const pivotX = midX - rect.left;
       const pivotY = midY - rect.top;
-      mapOffX = pivotX - (pivotX - mapOffX) * (newScale / mapScale);
-      mapOffY = pivotY - (pivotY - mapOffY) * (newScale / mapScale);
-      mapOffX += midX - lastMidX;
-      mapOffY += midY - lastMidY;
+      mapOffX = pivotX - (pivotX - mapOffX) * (newScale / mapScale) + (midX - lastMidX);
+      mapOffY = pivotY - (pivotY - mapOffY) * (newScale / mapScale) + (midY - lastMidY);
       mapScale = newScale;
       lastDist = dist; lastMidX = midX; lastMidY = midY;
       applyMapTransform();
@@ -1117,18 +1113,11 @@ function initMapGestures() {
   container.addEventListener('touchend', () => { isDragging = false; });
 }
 
-// ── openMap / closeMap ────────────────────────────────────────
 function openMap() {
-  const screen = document.getElementById('map-screen');
-  screen.style.display = 'flex';
-  // 초기 스케일: 컨테이너에 꽉 차게
+  document.getElementById('map-screen').style.display = 'flex';
   setTimeout(() => {
-    const img = document.getElementById('map-img');
-    const container = document.getElementById('map-container');
-    if (img && img.complete) {
-      mapScale = 1; mapOffX = 0; mapOffY = 0;
-      applyMapTransform();
-    }
+    mapScale = 1; mapOffX = 0; mapOffY = 0;
+    applyMapTransform();
     if (mapAnimId) cancelAnimationFrame(mapAnimId);
     mapLoop();
   }, 50);
@@ -1138,6 +1127,8 @@ function closeMap() {
   document.getElementById('map-screen').style.display = 'none';
   if (mapAnimId) { cancelAnimationFrame(mapAnimId); mapAnimId = null; }
 }
+
+document.addEventListener('DOMContentLoaded', initMapGestures);
 
 // 지도 제스처 초기화 (DOM 로드 후)
 document.addEventListener('DOMContentLoaded', initMapGestures);
