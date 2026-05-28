@@ -250,7 +250,7 @@
 
 <!-- AR 화면 -->
 <div id="ar-screen">
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline webkit-playsinline muted></video>
   <canvas id="canvas"></canvas>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
@@ -301,9 +301,19 @@ const LOCATION_IMAGES = {
 };
 
 
+```javascript
+// 기존값
 const SEARCH_RADIUS = 600;
-const CLOSE_RADIUS  = 100;
-const FOV_H         = 60;
+const FOV_H = 60;
+
+// 수정 추천
+const SEARCH_RADIUS = 600;
+
+// 화면에 보이는 각도 축소
+// 기존보다 덜 튀어나오고 정면일 때만 보임
+const FOV_H = 38;
+```
+
 const LOCATIONS_URL = 'locations.json';
 
 let userLat = null, userLon = null, gpsAccuracy = null;
@@ -356,22 +366,56 @@ function roundRect(ctx,x,y,w,h,r) {
   ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
 }
 
+```javascript
+```javascript
 // ── 위치 데이터 로드 ─────────────────────────────────────────
 async function loadLocations() {
   try {
-    const res=await fetch(LOCATIONS_URL);
-    const raw=await res.json();
-    const seen=new Set();
-    locations=raw.filter(l=>{ if(seen.has(l.name)) return false; seen.add(l.name); return true; });
+    const res = await fetch(LOCATIONS_URL);
+    const raw = await res.json();
+
+    const seen = new Set();
+
+    locations = raw.filter(l => {
+      if (seen.has(l.name)) return false;
+      seen.add(l.name);
+      return true;
+    });
+
   } catch(e) {
-    locations=[
-      {name:"생존수영",            lat:37.1028735053073,   lon:129.04242483596474},
-      {name:"주수체험",            lat:37.104298260520885, lon:129.0399941892712},
-      {name:"심폐소생술 · 외상처치", lat:37.103922335806324, lon:129.04063647937465},
-      {name:"소화기체험",          lat:37.102679842056396, lon:129.04006887222562},
+
+    // 수정된 실제 좌표
+    locations = [
+
+      {
+        name:"생존수영",
+        lat:37.102961,
+        lon:129.042322
+      },
+
+      {
+        name:"소화기체험",
+        lat:37.102842,
+        lon:129.039933
+      },
+
+      {
+        name:"심폐소생술 · 외상처치",
+        lat:37.103908,
+        lon:129.040703
+      },
+
+      {
+        name:"주수체험",
+        lat:37.104172,
+        lon:129.040072
+      }
+
     ];
   }
 }
+```
+
 
 // ── 목적지 선택 UI 렌더 ──────────────────────────────────────
 function renderDestGrid() {
@@ -476,10 +520,12 @@ function drawCloseMarker(ctx,W,H,loc,dist,diff,halfFOV,isNav) {
   let x=W*xRatio;
   x=Math.max(W*0.15,Math.min(W*0.85,x));
 
-  const imgSize=Math.round(W*0.22);
-  const nameFontSize=Math.round(W*0.065);
-  const distFontSize=Math.round(W*0.038);
-  const arrowSize=Math.round(W*0.048);
+const nearScale = dist <= 50 ? 1.45 : 1;
+
+const imgSize=Math.round(W*0.22*nearScale);
+const nameFontSize=Math.round(W*0.065*nearScale);
+const distFontSize=Math.round(W*0.038*nearScale);
+const arrowSize=Math.round(W*0.048*nearScale);
 
   ctx.save();
 
@@ -630,52 +676,128 @@ function startGPSWatch() {
   );
 }
 
+```javascript
 // ── 나침반 ────────────────────────────────────────────────────
-function startCompass() {
-  const handler=e=>{
-    if (e.webkitCompassHeading!=null) compassHeading=e.webkitCompassHeading;
-    else if (e.alpha!=null) compassHeading=(360-e.alpha)%360;
-  };
-  window.addEventListener('deviceorientationabsolute',handler,true);
-  window.addEventListener('deviceorientation',handler,true);
+
+// 부드러운 방향 보정용
+let targetCompassHeading = 0;
+
+function smoothAngle(current, target, factor = 0.08) {
+
+  let diff = ((target - current + 540) % 360) - 180;
+
+  return (current + diff * factor + 360) % 360;
 }
+
+function startCompass() {
+
+  const handler = (e) => {
+
+    let rawHeading = null;
+
+    if (e.webkitCompassHeading != null) {
+      rawHeading = e.webkitCompassHeading;
+
+    } else if (e.alpha != null) {
+      rawHeading = (360 - e.alpha) % 360;
+    }
+
+    if (rawHeading == null) return;
+
+    targetCompassHeading = rawHeading;
+  };
+
+  window.addEventListener(
+    'deviceorientationabsolute',
+    handler,
+    true
+  );
+
+  window.addEventListener(
+    'deviceorientation',
+    handler,
+    true
+  );
+
+  // 부드럽게 반영
+  function updateCompass() {
+
+    compassHeading = smoothAngle(
+      compassHeading,
+      targetCompassHeading,
+      0.05 // 민감도 절반 이하
+    );
+
+    requestAnimationFrame(updateCompass);
+  }
+
+  updateCompass();
+}
+```
+
 
 // ── 권한 요청 → AR 시작 ──────────────────────────────────────
 async function requestPermissions() {
-  const btn=document.getElementById('start-btn');
-  const errEl=document.getElementById('error-msg');
-  btn.textContent='권한 요청 중...'; btn.disabled=true; errEl.style.display='none';
-  try {
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
-    const video=document.getElementById('video');
-    video.srcObject=stream; await video.play();
 
-    await new Promise((resolve,reject)=>{
-      navigator.geolocation.getCurrentPosition(
-        pos=>{ userLat=pos.coords.latitude; userLon=pos.coords.longitude; gpsAccuracy=pos.coords.accuracy; resolve(); },
-        reject, {enableHighAccuracy:true,timeout:15000}
-      );
-    });
-
-    if (typeof DeviceOrientationEvent?.requestPermission==='function') {
-      try { await DeviceOrientationEvent.requestPermission(); } catch(e) {}
+    // iPhone 나침반 권한
+    if (
+      typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function'
+    ) {
+      try {
+        const response = await DeviceOrientationEvent.requestPermission();
+        console.log('나침반 권한:', response);
+      } catch (e) {
+        console.warn('나침반 권한 실패:', e);
+      }
     }
 
+    // 위치 데이터 로드
     await loadLocations();
+
+    // 이미지 프리로드
     preloadImages();
 
-    document.getElementById('permission-screen').style.display='none';
-    document.getElementById('ar-screen').style.display='block';
-    startCompass(); startGPSWatch();
+    // 화면 전환
+    document.getElementById('permission-screen').style.display = 'none';
+    document.getElementById('ar-screen').style.display = 'block';
+
+    // HUD 시작
+    startCompass();
+    startGPSWatch();
+
     renderDestGrid();
     render();
 
-  } catch(e) {
-    errEl.style.display='block';
-    if (e.code===1) errEl.textContent='📍 위치 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
-    else if (e.name==='NotAllowedError') errEl.textContent='📷 카메라 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
-    else errEl.textContent=`오류: ${e.message||e}`;
-    btn.textContent='다시 시도'; btn.disabled=false;
+  } catch (e) {
+
+    console.error('CAMERA ERROR:', e);
+
+    errEl.style.display = 'block';
+
+    if (e.code === 1) {
+      errEl.textContent = '📍 위치 권한이 필요합니다.\n설정 > 사이트 권한에서 허용해주세요.';
+
+    } else if (e.name === 'NotAllowedError') {
+      errEl.textContent = '📷 카메라 권한이 차단되었습니다.\n브라우저 설정에서 카메라 허용 후 다시 실행해주세요.';
+
+    } else if (e.name === 'NotFoundError') {
+      errEl.textContent = '📷 사용 가능한 카메라를 찾을 수 없습니다.';
+
+    } else if (e.name === 'NotReadableError') {
+      errEl.textContent = '📷 카메라가 다른 앱에서 사용 중입니다.';
+
+    } else if (e.message.includes('HTTPS')) {
+      errEl.textContent = '🔒 HTTPS 환경에서만 카메라 사용 가능\n웹서버에 업로드 후 실행해주세요.';
+
+    } else {
+      errEl.textContent = `오류: ${e.message || e}`;
+    }
+
+    alert(`${e.name || 'ERROR'}\n${e.message || e}`);
+
+    btn.textContent = '다시 시도';
+    btn.disabled = false;
   }
 }
 
