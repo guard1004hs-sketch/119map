@@ -98,8 +98,15 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 }
 #turn-indicator.left  .ti-arrow{animation:turnBounceL 1.1s ease-in-out infinite;}
 #turn-indicator.right .ti-arrow{animation:turnBounceR 1.1s ease-in-out infinite;}
-@keyframes turnBounceL{0%,100%{transform:translateX(0)}50%{transform:translateX(-10px)}}
-@keyframes turnBounceR{0%,100%{transform:translateX(0)}50%{transform:translateX(10px)}}
+@keyframes turnBounceL{
+  0%,100%{transform:translateX(0)}
+  50%{transform:translateX(-10px)}
+}
+/* 오른쪽: scaleX(-1)로 화살표 좌우 반전 → ▶ 모양, 바운스도 시각적으로 우측 방향 */
+@keyframes turnBounceR{
+  0%,100%{transform:scaleX(-1) translateX(0)}
+  50%{transform:scaleX(-1) translateX(-10px)}
+}
 #turn-indicator .ti-text{font-size:11.5px;font-weight:800;color:var(--yellow);text-align:center;letter-spacing:.04em;}
 #turn-indicator .ti-name{font-size:13px;font-weight:700;color:var(--txt);text-align:center;line-height:1.2;}
 #turn-indicator .ti-dist{font-family:var(--mono);font-size:12px;color:var(--txt-dim);}
@@ -253,33 +260,82 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 #boot{position:absolute;inset:0;z-index:60;display:grid;place-items:center;background:var(--bg-dark);transition:opacity .5s;}
 #boot .ring{width:46px;height:46px;border-radius:50%;border:3px solid rgba(255,214,0,.18);border-top-color:var(--yellow);animation:spin .8s linear infinite;}
 
-/* ===== 폰 방향 안내 (세로로 들고 있을 때만 표시) ===== */
-.rotate-hint{
-  position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 22px);
-  transform:translateX(-50%);z-index:7;
-  font-size:11.5px;letter-spacing:.02em;font-weight:700;color:var(--yellow);
-  padding:9px 16px;border-radius:999px;
-  background:rgba(8,16,22,.88);border:1px solid var(--line);
-  backdrop-filter:blur(8px);
-  display:none;white-space:nowrap;
+/* ===== 권한 동의 모달 ===== */
+#perm-modal{
+  position:fixed;inset:0;z-index:55;
+  background:rgba(0,0,0,.78);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  display:none;align-items:center;justify-content:center;
+  padding:24px;
 }
-.rotate-hint .ico{
-  display:inline-block;margin-right:7px;
-  animation:rotHint 2s ease-in-out infinite;
+#perm-modal.show{display:flex;animation:fadeInPerm .25s ease-out;}
+@keyframes fadeInPerm{from{opacity:0}to{opacity:1}}
+.perm-modal-card{
+  max-width:380px;width:100%;
+  background:linear-gradient(180deg,#0e1a23,#07101a);
+  border:2px solid var(--yellow);border-radius:24px;
+  padding:28px 24px 22px;
+  box-shadow:0 0 60px -10px rgba(255,214,0,.45),0 22px 50px -10px rgba(0,0,0,.75);
+  animation:popInPerm .45s cubic-bezier(.22,1.4,.36,1);
 }
-@keyframes rotHint{
-  0%,100%{transform:rotate(0)}
-  40%{transform:rotate(-85deg)}
-  60%{transform:rotate(-85deg)}
-}
+@keyframes popInPerm{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.perm-modal-emoji{font-size:42px;text-align:center;margin-bottom:8px;}
+#perm-modal h3{text-align:center;font-size:19px;font-weight:800;color:var(--yellow);margin-bottom:10px;letter-spacing:-.01em;}
+#perm-modal p.perm-modal-lead{text-align:center;font-size:13px;color:var(--txt-dim);line-height:1.55;margin-bottom:16px;}
+.perm-modal-list{list-style:none;background:rgba(255,214,0,.05);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:14px;}
+.perm-modal-list li{font-size:13px;font-weight:600;color:var(--txt);padding:7px 0;display:flex;align-items:center;gap:11px;}
+.perm-modal-list li .lico{font-size:17px;width:24px;text-align:center;flex-shrink:0;}
+.perm-modal-list li .ltxt{flex:1;}
+.perm-modal-list li small{display:block;font-size:11px;font-weight:400;color:var(--txt-dim);margin-top:1px;}
+.perm-modal-hint{text-align:center;font-size:11px;color:var(--txt-dim);margin-bottom:18px;line-height:1.5;}
+.perm-modal-actions{display:flex;gap:10px;}
+.perm-modal-actions button{flex:1;padding:13px;border-radius:14px;font-size:14px;font-weight:700;letter-spacing:.01em;}
+.perm-modal-actions button:active{transform:scale(.96);}
+#perm-modal-cancel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:var(--txt);}
+#perm-modal-agree{background:linear-gradient(180deg,#ffe14d,var(--yellow));color:#0b0b00;box-shadow:0 10px 24px -8px rgba(255,214,0,.55);}
+
+/* ===== 가로보기 강제: 세로 폰일 땐 화면 내용을 시계방향 90° 회전 ===== */
 @media (orientation: portrait){
-  #map-screen:not(.hidden) .rotate-hint{display:inline-flex;align-items:center;}
+  #map-screen:not(.hidden){
+    position:fixed;
+    width:100vh; height:100vw;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%) rotate(90deg);
+    transform-origin:center center;
+  }
+  /* 회전 적용 시 헤더 양쪽 안전 여백 (시스템 UI 회피용 고정 패딩) */
+  #map-screen:not(.hidden) #map-header{
+    padding:16px 48px 12px 48px;
+  }
+}
+/* 가로로 자연스럽게 들면 회전 없이 풀스크린 */
+@media (orientation: landscape){
+  #map-screen{ width:100vw; height:100vh; }
 }
 </style>
 </head>
 <body>
 
 <div id="boot"><div class="ring"></div></div>
+
+<!-- ===== 권한 동의 모달 (시작 버튼 → 표시) ===== -->
+<div id="perm-modal" role="dialog" aria-hidden="true" aria-modal="true">
+  <div class="perm-modal-card">
+    <div class="perm-modal-emoji">🛡️</div>
+    <h3>권한 요청</h3>
+    <p class="perm-modal-lead">AR 가이드를 시작하려면<br>아래 3가지 권한이 필요합니다</p>
+    <ul class="perm-modal-list">
+      <li><span class="lico">📷</span><span class="ltxt">카메라<small>현장 위에 AR 안내 표시</small></span></li>
+      <li><span class="lico">📍</span><span class="ltxt">위치 (GPS)<small>현재 위치와 거리 계산</small></span></li>
+      <li><span class="lico">🧭</span><span class="ltxt">방향 센서<small>나아갈 방향 화살표 안내</small></span></li>
+    </ul>
+    <p class="perm-modal-hint">동의 후 시스템 권한 알림이 차례로 표시됩니다.<br>모두 허용해야 정상 동작합니다.</p>
+    <div class="perm-modal-actions">
+      <button id="perm-modal-cancel">취소</button>
+      <button id="perm-modal-agree">동의하고 시작</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== 1. 권한 화면 ===== -->
 <section id="permission-screen">
@@ -397,7 +453,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
       <button id="zoom-fit" aria-label="전체보기">⤢</button>
     </div>
     <div class="map-hint">두 손가락 확대 · 드래그 이동 · 더블탭 전체보기</div>
-    <div class="rotate-hint"><span class="ico">📱</span>폰을 가로로 돌리면 더 잘 보입니다</div>
   </div>
 </section>
 
@@ -617,7 +672,6 @@ function renderAR(){
     $('#nav-dest-dist').textContent=fmtDist(dist);
     $('#ti-dist').textContent=fmtDist(dist);
     arrowWrap.style.transform=`rotate(${rel}deg)`;
-    drawDirectionLine(rel);
     destMarker.classList.toggle('near', dist < PROXIMITY_M);
 
     // 시야 안/밖 판정 (히스테리시스: 들어올 땐 30°, 나갈 땐 35°)
@@ -655,15 +709,6 @@ function renderAR(){
     }
   }
   requestAnimationFrame(renderAR);
-}
-function drawDirectionLine(rel){
-  const cx=innerWidth/2, cy=innerHeight*0.62;
-  ctx.save(); ctx.translate(cx,cy); ctx.rotate(toRad(rel));
-  const g=ctx.createLinearGradient(0,40,0,-150);
-  g.addColorStop(0,'rgba(255,214,0,0)'); g.addColorStop(1,'rgba(255,214,0,.55)');
-  ctx.strokeStyle=g; ctx.lineWidth=6; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(0,40); ctx.lineTo(0,-130); ctx.stroke();
-  ctx.restore();
 }
 
 /* =========================================================================
@@ -829,7 +874,17 @@ function init(){
   buildDestGrid();
   setupMapImage();
 
-  $('#start-btn').addEventListener('click',startApp);
+  // 시작 버튼 → 권한 동의 모달 표시
+  $('#start-btn').addEventListener('click',()=>{ $('#perm-modal').classList.add('show'); });
+  // 모달 동의 → 실제 권한 요청 (시스템 알림이 차례로 표시됨)
+  $('#perm-modal-agree').addEventListener('click',()=>{
+    $('#perm-modal').classList.remove('show');
+    startApp();
+  });
+  // 모달 취소 → 모달만 닫고 메인 화면 유지
+  $('#perm-modal-cancel').addEventListener('click',()=>{
+    $('#perm-modal').classList.remove('show');
+  });
   $('#nav-cancel').addEventListener('click',cancelDestination);
   $('#map-toggle').addEventListener('click',()=>show('map'));
   $('#map-back').addEventListener('click',()=>show('ar'));
