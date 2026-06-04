@@ -548,10 +548,27 @@ function fmtDist(m){
 /* =========================================================================
    카메라
    ========================================================================= */
+/* =========================================================================
+   카메라
+   ========================================================================= */
+let cameraStream = null;   // 스트림 참조 보관 → 나중에 제어 가능
+
 async function startCamera(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+  const stream=await navigator.mediaDevices.getUserMedia({
+    audio:false,
+    video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}
+  });
+  cameraStream=stream;
   const v=$('#video'); v.srcObject=stream; await v.play().catch(()=>{}); return stream;
 }
+
+// 페이지가 백그라운드로 숨겨지면 카메라 트랙 비활성화 → 배터리·발열 절약
+// 다시 포그라운드로 돌아오면 자동 재개
+document.addEventListener('visibilitychange',()=>{
+  if(!cameraStream) return;
+  const active=!document.hidden;
+  cameraStream.getVideoTracks().forEach(t=>{ t.enabled=active; });
+});
 
 /* =========================================================================
    GPS (AR 길안내 전용)
@@ -581,6 +598,10 @@ function setStatusText(t){ $('#status-text').textContent=t; }
 /* =========================================================================
    나침반
    ========================================================================= */
+// absolute 이벤트(정밀)가 실제로 발화됐으면 relative 이벤트는 무시
+// → Android에서 onOrient가 2번씩 호출되는 이중 리스너 문제 방지
+let compassAbsoluteActive = false;
+
 async function startCompass(){
   if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
     const res=await DeviceOrientationEvent.requestPermission();
@@ -590,9 +611,15 @@ async function startCompass(){
   window.addEventListener('deviceorientation',onOrient,true);
 }
 function onOrient(e){
+  // absolute 이벤트가 한 번이라도 오면 플래그 세팅
+  if(e.type==='deviceorientationabsolute') compassAbsoluteActive=true;
+  // absolute가 작동 중인데 relative 이벤트가 또 오면 무시 (중복 호출 차단)
+  if(e.type==='deviceorientation' && compassAbsoluteActive) return;
+
   let h=null;
-  if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;
-  else if(typeof e.alpha==='number') h=360-e.alpha;
+  if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;       // iOS
+  else if(e.absolute && typeof e.alpha==='number') h=360-e.alpha;               // Android 절대
+  else if(typeof e.alpha==='number') h=360-e.alpha;                             // fallback
   if(h==null) return;
   state.heading=smoothAngle(state.heading,normDeg(h),HEADING_SMOOTH);
 }
@@ -657,13 +684,19 @@ function cancelDestination(){
    ========================================================================= */
 const canvas=$('#canvas'), ctx=canvas.getContext('2d'), arrowWrap=$('#arrow-wrap');
 const destMarker=$('#dest-marker'), navHud=$('#nav-hud'), turnInd=$('#turn-indicator');
+let rafId=null;   // RAF ID 보관 → AR 화면 아닐 때 루프 중지
+
 function resizeCanvas(){
   const dpr=Math.min(window.devicePixelRatio||1,2);
   canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
   ctx.setTransform(dpr,0,0,dpr,0,0);
 }
 window.addEventListener('resize',resizeCanvas);
+
 function renderAR(){
+  // AR 화면이 숨겨져 있으면 루프 중지 (지도·권한 화면에서 60fps 낭비 제거)
+  if(screens.ar.classList.contains('hidden')){ rafId=null; return; }
+
   ctx.clearRect(0,0,innerWidth,innerHeight);
   if(state.dest&&state.pos){
     const dist=calculateDistance(state.pos.lat,state.pos.lon,state.dest.lat,state.dest.lon);
@@ -713,10 +746,8 @@ function renderAR(){
     state.groundOpacity += (0 - state.groundOpacity) * 0.07;
     if(state.groundOpacity > 0.01) drawGroundLine(state.groundOpacity);
   }
-  requestAnimationFrame(renderAR);
+  rafId=requestAnimationFrame(renderAR);
 }
-
-/* 아이콘 하단 → 화면 바닥까지 실선 + 착지 원 */
 function drawGroundLine(opacity){
   const iconEl = $('#dest-icon-wrap');
   if(!iconEl) return;
@@ -893,8 +924,13 @@ function pinchData(e){
 function show(name){
   Object.values(screens).forEach(s=>s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
+  if(name==='ar'){
+    // AR 화면 진입 시에만 RAF 루프 시작 (이미 돌고 있으면 중복 시작 안 함)
+    if(!rafId) rafId=requestAnimationFrame(renderAR);
+  }
   if(name==='map'){
-    // CSS 회전·레이아웃 안정화 후 fit
+    // AR 화면이 hidden 됐으므로 RAF는 다음 프레임에서 스스로 종료
+    // 지도 fit은 CSS 회전 안정화 후 실행
     requestAnimationFrame(()=>requestAnimationFrame(fitMap));
   }
 }
@@ -914,7 +950,7 @@ async function startApp(){
     catch(e){ markPerm('perm-gps',false); throw new Error('위치 접근 실패: '+e.message); }
     try{ await startCompass(); markPerm('perm-ori',true); }
     catch(e){ markPerm('perm-ori',false); }
-    resizeCanvas(); show('ar'); requestAnimationFrame(renderAR);
+    resizeCanvas(); show('ar');   // RAF는 show('ar') 안에서 시작됨
   }catch(err){
     showError(err.message+' — HTTPS 환경인지, 브라우저 권한이 허용됐는지 확인하세요.');
     btn.disabled=false; btn.textContent='다시 시도';
