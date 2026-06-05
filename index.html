@@ -259,6 +259,58 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
 #boot{position:absolute;inset:0;z-index:60;display:grid;place-items:center;background:var(--bg-dark);transition:opacity .5s;}
 #boot .ring{width:46px;height:46px;border-radius:50%;border:3px solid rgba(255,214,0,.18);border-top-color:var(--yellow);animation:spin .8s linear infinite;}
+#ar-notice{
+  position:absolute;inset:0;z-index:23;
+  background:rgba(0,0,0,.82);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0 0 calc(env(safe-area-inset-bottom) + 20px);
+  transition:opacity .3s;
+}
+#ar-notice.hide{opacity:0;pointer-events:none;}
+.ar-notice-card{
+  width:100%;max-width:480px;
+  background:linear-gradient(180deg,rgba(10,18,26,.97),rgba(5,10,15,.99));
+  border:1.5px solid var(--line);
+  border-radius:24px 24px 18px 18px;
+  padding:22px 22px 20px;
+  box-shadow:0 -8px 40px -4px rgba(0,0,0,.5);
+  animation:noticeSlideUp .45s cubic-bezier(.22,1,.36,1);
+}
+@keyframes noticeSlideUp{from{transform:translateY(60px);opacity:0}to{transform:translateY(0);opacity:1}}
+.ar-notice-badge{
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+}
+.ar-notice-badge .badge-ico{
+  width:36px;height:36px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(255,214,0,.12);color:var(--yellow);flex-shrink:0;
+}
+.ar-notice-badge .badge-ico svg{width:20px;height:20px;}
+.ar-notice-badge .badge-txt{font-size:14px;font-weight:800;color:var(--yellow);letter-spacing:-.01em;}
+.ar-notice-body{
+  font-size:13px;color:var(--txt-dim);line-height:1.7;
+  border-left:2.5px solid rgba(255,214,0,.4);
+  padding-left:13px;margin-bottom:18px;
+}
+.ar-notice-body strong{color:var(--txt);font-weight:700;}
+.ar-notice-items{
+  list-style:none;display:flex;flex-direction:column;gap:9px;margin-bottom:20px;
+}
+.ar-notice-items li{
+  display:flex;align-items:flex-start;gap:10px;
+  font-size:12.5px;color:var(--txt-dim);line-height:1.5;
+}
+.ar-notice-items li .tag{
+  flex-shrink:0;font-size:15px;width:22px;text-align:center;margin-top:1px;
+}
+#ar-notice-ok{
+  width:100%;padding:14px;border-radius:14px;
+  font-size:14.5px;font-weight:800;color:#0b0b00;
+  background:linear-gradient(180deg,#ffe14d,var(--yellow));
+  box-shadow:0 8px 24px -8px rgba(255,214,0,.55);
+  letter-spacing:.01em;
+}
+#ar-notice-ok:active{transform:scale(.97);}
 
 /* ===== 권한 동의 모달 ===== */
 #perm-modal{
@@ -374,6 +426,30 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 <section id="ar-screen" class="hidden">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
+  <!-- AR 서비스 안내 (첫 진입 시 1회) -->
+  <div id="ar-notice" style="display:none">
+    <div class="ar-notice-card">
+      <div class="ar-notice-badge">
+        <div class="badge-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="badge-txt">AR 위치 안내 서비스 이용 전 확인</div>
+      </div>
+      <div class="ar-notice-body">
+        이 서비스는 <strong>목적지의 방향과 거리를 알려드리는 AR 위치 안내</strong>입니다.<br>
+        경로를 자동으로 안내하는 내비게이션이 아닙니다.
+      </div>
+      <ul class="ar-notice-items">
+        <li><span class="tag">🧭</span><span>화살표는 목적지까지의 <strong>직선 방향</strong>을 가리킵니다.</span></li>
+        <li><span class="tag">🚶</span><span>실제 이동 시 <strong>반드시 길을 따라</strong> 이동해 주세요.</span></li>
+        <li><span class="tag">🚫</span><span><strong>건물·숲·울타리</strong> 등 통행 불가 구역을 가로질러 가지 마세요.</span></li>
+      </ul>
+      <button id="ar-notice-ok">확인했습니다</button>
+    </div>
+  </div>
+
   <div id="status-bar">
     <span class="dot" id="gps-dot"></span>
     <span id="status-text">GPS 신호 수신 중…</span>
@@ -477,13 +553,13 @@ const LOCATION_IMAGES = {
 
 /* AR 네비게이션용 실제 GPS 좌표 (lat / lon) — DMS 원본 주석 */
 const DESTINATIONS = [
-  // 생존수영 : 37°06'10.73"N 129°02'32.12"E
-  { id:'swim',  name:'생존수영체험',           lat:37.102981, lon:129.042256, icon:'swim'  },
-  // 소화기체험: 37°06'10.52"N 129°02'23.29"E
-  { id:'fire',  name:'소화기체험',         lat:37.102922, lon:129.039803, icon:'fire'  },
-  // 외상처치·심폐소생술: 37°06'13.94"N 129°02'26.52"E
-  { id:'cpr',   name:'외상처치, 심폐소생술체험', lat:37.103872, lon:129.040700, icon:'cpr'   },
-  // 주수체험 : 37°06'15.30"N 129°02'24.30"E
+  // 생존수영 : 37°06'11.00"N 129°02'32.51"E
+  { id:'swim',  name:'생존수영',           lat:37.103056, lon:129.042364, icon:'swim'  },
+  // 소화기체험: 37°06'09.58"N 129°02'24.87"E
+  { id:'fire',  name:'소화기체험',         lat:37.102661, lon:129.040242, icon:'fire'  },
+  // 응급처치·심폐소생술: 37°06'13.37"N 129°02'26.78"E
+  { id:'cpr',   name:'응급처치, 심폐소생술', lat:37.103714, lon:129.040772, icon:'cpr'   },
+  // 주수체험 : 37°06'15.30"N 129°02'24.30"E (변경 없음)
   { id:'water', name:'주수체험',           lat:37.104250, lon:129.040083, icon:'water' },
 ];
 
@@ -933,10 +1009,16 @@ function show(name){
   if(name==='ar'){
     // AR 화면 진입 시에만 RAF 루프 시작 (이미 돌고 있으면 중복 시작 안 함)
     if(!rafId) rafId=requestAnimationFrame(renderAR);
+    // 첫 진입에만 서비스 안내 표시
+    const notice=$('#ar-notice');
+    if(!arNoticeSeen){
+      notice.style.display='flex';
+      notice.classList.remove('hide');
+    } else {
+      notice.style.display='none';
+    }
   }
   if(name==='map'){
-    // AR 화면이 hidden 됐으므로 RAF는 다음 프레임에서 스스로 종료
-    // 지도 fit은 CSS 회전 안정화 후 실행
     requestAnimationFrame(()=>requestAnimationFrame(fitMap));
   }
 }
@@ -971,7 +1053,14 @@ function init(){
   buildDestGrid();
   setupMapImage();
 
-  // 시작 버튼 → 권한 동의 모달 표시
+  // AR 서비스 안내 모달 (앱 세션 내 1회만 표시)
+  let arNoticeSeen = false;
+  $('#ar-notice-ok').addEventListener('click', ()=>{
+    arNoticeSeen = true;
+    const n = $('#ar-notice');
+    n.classList.add('hide');
+    setTimeout(()=>n.style.display='none', 320);
+  });
   $('#start-btn').addEventListener('click',()=>{ $('#perm-modal').classList.add('show'); });
   // 모달 동의 → 실제 권한 요청 (시스템 알림이 차례로 표시됨)
   $('#perm-modal-agree').addEventListener('click',()=>{
