@@ -933,7 +933,6 @@ function fitMap(){
   if(!mapReady) return;
   const cw=mapContainer.clientWidth, ch=mapContainer.clientHeight;
   if(cw===0||ch===0) return;
-  // cover: 헤더 아래 영역을 지도가 꽉 채우도록
   mapView.scale = Math.max(cw/MAP_W, ch/MAP_H);
   mapView.minScale = Math.min(cw/MAP_W, ch/MAP_H) * 0.7;
   mapView.maxScale = 5;
@@ -942,61 +941,111 @@ function fitMap(){
   applyMapTransform(true);
 }
 function applyMapTransform(animated){
-  mapInner.style.transition = animated ? 'transform .35s cubic-bezier(.22,1,.36,1)' : '';
+  mapInner.style.transition = animated ? 'transform .35s cubic-bezier(.22,1,.36,1)' : 'none';
   mapInner.style.transform = `translate(${mapView.x}px,${mapView.y}px) scale(${mapView.scale})`;
-  if(animated) setTimeout(()=>mapInner.style.transition='', 380);
+  if(animated) setTimeout(()=>{ mapInner.style.transition='none'; }, 380);
 }
 function clampScale(s){ return Math.max(mapView.minScale, Math.min(mapView.maxScale, s)); }
+
+/* cx, cy: container 기준 좌표 */
 function zoomAt(cx, cy, factor){
-  const ns=clampScale(mapView.scale*factor);
-  mapView.x = cx - (cx-mapView.x)*(ns/mapView.scale);
-  mapView.y = cy - (cy-mapView.y)*(ns/mapView.scale);
+  const ns = clampScale(mapView.scale * factor);
+  if(ns === mapView.scale) return;
+  const ratio = ns / mapView.scale;
+  mapView.x = cx - (cx - mapView.x) * ratio;
+  mapView.y = cy - (cy - mapView.y) * ratio;
   mapView.scale = ns;
   applyMapTransform(false);
 }
 
-/* 터치: 드래그 / 핀치 / 더블탭 reset */
+/* ── 터치: 드래그 / 핀치 / 더블탭 ───────────────────────────────────── */
 let drag=null, pinch=null, lastTap=0;
-mapContainer.addEventListener('touchstart',e=>{
-  if(e.touches.length===1){
-    drag={x:e.touches[0].clientX-mapView.x, y:e.touches[0].clientY-mapView.y};
+
+/* container 좌상단 기준 터치 좌표 */
+function clientToContainer(clientX, clientY){
+  const r = mapContainer.getBoundingClientRect();
+  return { x: clientX - r.left, y: clientY - r.top };
+}
+
+mapContainer.addEventListener('touchstart', e=>{
+  e.preventDefault(); // 스크롤/기본동작 차단 (passive:false 필수)
+  if(e.touches.length === 1){
+    const p = clientToContainer(e.touches[0].clientX, e.touches[0].clientY);
+    // 드래그 기준점: 현재 손가락 위치 - 현재 mapView 오프셋
+    drag = { ox: p.x - mapView.x, oy: p.y - mapView.y };
+    pinch = null;
     // 더블탭 감지
-    const now=Date.now();
-    if(now-lastTap<300){ fitMap(); lastTap=0; drag=null; }
-    else lastTap=now;
-  } else if(e.touches.length===2){
-    pinch=initPinch(e); drag=null;
+    const now = Date.now();
+    if(now - lastTap < 300){ fitMap(); lastTap = 0; drag = null; return; }
+    lastTap = now;
+  } else if(e.touches.length === 2){
+    drag = null;
+    pinch = initPinch(e);
+  }
+},{passive:false});
+
+mapContainer.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  if(pinch && e.touches.length === 2){
+    const [d, mid] = pinchData(e);
+    if(pinch.lastDist === 0) return;
+
+    // ① scale 변화량: 이전 프레임 대비 비율
+    const scaleFactor = d / pinch.lastDist;
+    const ns = clampScale(mapView.scale * scaleFactor);
+    const actualRatio = ns / mapView.scale;
+
+    // ② 현재 중점(mid) 기준으로 zoom
+    mapView.x = mid.x - (mid.x - mapView.x) * actualRatio;
+    mapView.y = mid.y - (mid.y - mapView.y) * actualRatio;
+    mapView.scale = ns;
+
+    // ③ 중점이 이동한 만큼 pan
+    mapView.x += mid.x - pinch.lastMid.x;
+    mapView.y += mid.y - pinch.lastMid.y;
+
+    // ④ 다음 프레임을 위해 이전값 갱신
+    pinch.lastDist = d;
+    pinch.lastMid = mid;
+
+    applyMapTransform(false);
+  } else if(drag && e.touches.length === 1){
+    const p = clientToContainer(e.touches[0].clientX, e.touches[0].clientY);
+    mapView.x = p.x - drag.ox;
+    mapView.y = p.y - drag.oy;
+    applyMapTransform(false);
+  }
+},{passive:false});
+
+mapContainer.addEventListener('touchend', e=>{
+  if(e.touches.length === 0){
+    drag = null; pinch = null;
+  } else if(e.touches.length === 1 && !drag){
+    // 핀치에서 손가락 하나 뗀 경우 → 남은 손가락으로 드래그 이어받기
+    const p = clientToContainer(e.touches[0].clientX, e.touches[0].clientY);
+    drag = { ox: p.x - mapView.x, oy: p.y - mapView.y };
+    pinch = null;
   }
 },{passive:true});
-mapContainer.addEventListener('touchmove',e=>{
-  if(pinch && e.touches.length===2){
-    e.preventDefault();
-    const [d,mid]=pinchData(e);
-    const ns=clampScale(pinch.scale * d/pinch.dist);
-    mapView.x = mid.x - (mid.x-pinch.x)*(ns/pinch.scale);
-    mapView.y = mid.y - (mid.y-pinch.y)*(ns/pinch.scale);
-    mapView.scale = ns;
-    applyMapTransform(false);
-  } else if(drag && e.touches.length===1){
-    mapView.x = e.touches[0].clientX - drag.x;
-    mapView.y = e.touches[0].clientY - drag.y;
-    applyMapTransform(false);
-  }
-},{passive:false});
-mapContainer.addEventListener('touchend',()=>{ drag=null; pinch=null; },{passive:true});
 
-/* 데스크톱 휠 줌 (테스트용) */
-mapContainer.addEventListener('wheel',e=>{
+mapContainer.addEventListener('touchcancel', ()=>{ drag=null; pinch=null; },{passive:true});
+
+/* 데스크톱 휠 줌 */
+mapContainer.addEventListener('wheel', e=>{
   e.preventDefault();
-  const r=mapContainer.getBoundingClientRect();
-  zoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY<0 ? 1.12 : 0.89);
+  const r = mapContainer.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 0.89);
 },{passive:false});
 
-function initPinch(e){ const [d]=pinchData(e); return {dist:d, scale:mapView.scale, x:mapView.x, y:mapView.y}; }
+function initPinch(e){
+  const [d, mid] = pinchData(e);
+  return { lastDist: d, lastMid: mid };
+}
 function pinchData(e){
-  const a=e.touches[0], b=e.touches[1], r=mapContainer.getBoundingClientRect();
-  const dist=Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
-  const mid={ x:(a.clientX+b.clientX)/2-r.left, y:(a.clientY+b.clientY)/2-r.top };
+  const a = e.touches[0], b = e.touches[1];
+  const r = mapContainer.getBoundingClientRect();
+  const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const mid = { x:(a.clientX + b.clientX)/2 - r.left, y:(a.clientY + b.clientY)/2 - r.top };
   return [dist, mid];
 }
 
