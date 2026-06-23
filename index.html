@@ -595,7 +595,7 @@ const ICONS = {
 /* =========================================================================
    상태
    ========================================================================= */
-const state = { pos:null, accuracy:null, heading:0, dest:null, arrivedFor:null, inView:false, groundOpacity:0 };
+const state = { pos:null, accuracy:null, heading:null, dest:null, arrivedFor:null, inView:false, groundOpacity:0 };
 const $ = (s) => document.querySelector(s);
 const screens = { perm:$('#permission-screen'), ar:$('#ar-screen'), map:$('#map-screen') };
 
@@ -689,8 +689,24 @@ function onGps(p){
 
   let alpha=POS_SMOOTH;
   if(accuracy>ACCURACY_WARN) alpha*=0.4;   // 정확도 낮으면 스무딩 더 강하게
-  if(!state.pos) state.pos={lat,lon};
-  else state.pos={lat:state.pos.lat+alpha*(lat-state.pos.lat),lon:state.pos.lon+alpha*(lon-state.pos.lon)};
+  if(!state.pos){
+    state.pos={lat,lon};
+  } else {
+    const prevLat=state.pos.lat, prevLon=state.pos.lon;
+    state.pos={lat:prevLat+alpha*(lat-prevLat), lon:prevLon+alpha*(lon-prevLon)};
+
+    // 나침반이 없거나 아직 heading이 null인 경우, GPS 이동 방향으로 heading 보조 추정
+    // (이동 거리가 충분해야 신뢰 가능: 약 3m 이상)
+    if(state.heading === null || !compassAbsoluteActive){
+      const moveDist = calculateDistance(prevLat, prevLon, lat, lon);
+      if(moveDist > 3){
+        const moveBearing = calculateBearing(prevLat, prevLon, lat, lon);
+        // GPS heading은 스무딩 없이 바로 적용 (나침반 보다 지연됨)
+        if(state.heading === null) state.heading = moveBearing;
+        else state.heading = smoothAngle(state.heading, moveBearing, 0.3);
+      }
+    }
+  }
   updateStatus(true);
   $('#accuracy-warn').classList.toggle('hidden',accuracy<=ACCURACY_WARN);
 }
@@ -698,7 +714,10 @@ function onGpsError(e){ updateStatus(false); setStatusText('GPS 오류: '+(e.mes
 function updateStatus(ok){
   const dot=$('#gps-dot');
   dot.className='dot '+(ok?(state.accuracy>ACCURACY_WARN?'warn':'live'):'warn');
-  if(ok) setStatusText('GPS 양호 · ±'+Math.round(state.accuracy)+'m');
+  if(ok){
+    const hdgTxt = state.heading !== null ? (' · 방위 '+Math.round(state.heading)+'°') : ' · 나침반 대기';
+    setStatusText('GPS 양호 · ±'+Math.round(state.accuracy)+'m'+hdgTxt);
+  }
 }
 function setStatusText(t){ $('#status-text').textContent=t; }
 
@@ -717,18 +736,60 @@ async function startCompass(){
   window.addEventListener('deviceorientationabsolute',onOrient,true);
   window.addEventListener('deviceorientation',onOrient,true);
 }
+function getScreenOrientAngle(){
+  // screen.orientation.angle 우선, 없으면 window.orientation (deprecated but widely supported)
+  if(screen.orientation && screen.orientation.angle != null) return screen.orientation.angle;
+  if(typeof window.orientation === 'number') return window.orientation;
+  return 0;
+}
+
 function onOrient(e){
   // absolute 이벤트가 한 번이라도 오면 플래그 세팅
   if(e.type==='deviceorientationabsolute') compassAbsoluteActive=true;
   // absolute가 작동 중인데 relative 이벤트가 또 오면 무시 (중복 호출 차단)
   if(e.type==='deviceorientation' && compassAbsoluteActive) return;
 
-  let h=null;
-  if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;       // iOS
-  else if(e.absolute && typeof e.alpha==='number') h=360-e.alpha;               // Android 절대
-  else if(typeof e.alpha==='number') h=360-e.alpha;                             // fallback
-  if(h==null) return;
-  state.heading=smoothAngle(state.heading,normDeg(h),HEADING_SMOOTH);
+  let h = null;
+
+  if(typeof e.webkitCompassHeading === 'number'){
+    // ── iOS Safari ──────────────────────────────────────────────────────────
+    // webkitCompassHeading = "기기 top이 가리키는 방위각" (0=북, 시계방향)
+    // webkitCompassAccuracy가 -1이면 센서 보정 미완료 → 무시
+    if(typeof e.webkitCompassAccuracy === 'number' && e.webkitCompassAccuracy < 0) return;
+    h = e.webkitCompassHeading;
+
+    // 화면 방향 보정: 카메라 시선은 기기 뒷면 방향
+    // portrait(0): 보정 없음
+    // landscapeLeft(90, 홈버튼 오른쪽): 카메라가 오른쪽 → h + 90
+    // landscapeRight(270/-90, 홈버튼 왼쪽): 카메라가 왼쪽 → h - 90
+    // upsideDown(180): h + 180
+    const orient = getScreenOrientAngle();
+    if(orient === 90)                  h = normDeg(h + 90);
+    else if(orient === -90 || orient === 270) h = normDeg(h - 90);
+    else if(orient === 180)            h = normDeg(h + 180);
+
+  } else if(e.absolute && typeof e.alpha === 'number'){
+    // ── Android: deviceorientationabsolute ──────────────────────────────────
+    // e.alpha = Z축 반시계 방향 회전 (북쪽=0에서 시계방향이 양수)
+    // 북쪽 heading = 360 - alpha
+    h = normDeg(360 - e.alpha);
+
+    // 화면 방향 보정
+    const orient = getScreenOrientAngle();
+    if(orient === 90)                  h = normDeg(h + 90);
+    else if(orient === -90 || orient === 270) h = normDeg(h - 90);
+    else if(orient === 180)            h = normDeg(h + 180);
+
+  } else {
+    // ── non-absolute fallback ────────────────────────────────────────────────
+    // 상대값이라 절대 방위 계산 불가 → heading 갱신 안 함
+    if(!compassAbsoluteActive) setStatusText('나침반 보정 중… 기기를 8자로 움직여주세요');
+    return;
+  }
+
+  if(h == null || isNaN(h)) return;
+  // 첫 유효 heading이면 즉시 설정 (smoothAngle: prev==null 이면 next 그대로 반환)
+  state.heading = smoothAngle(state.heading, normDeg(h), HEADING_SMOOTH);
 }
 
 /* =========================================================================
@@ -808,6 +869,14 @@ function renderAR(){
   if(state.dest&&state.pos){
     const dist=calculateDistance(state.pos.lat,state.pos.lon,state.dest.lat,state.dest.lon);
     const bearing=calculateBearing(state.pos.lat,state.pos.lon,state.dest.lat,state.dest.lon);
+
+    // heading이 아직 없으면 화살표 렌더링 스킵 (엉뚱한 방향 방지)
+    if(state.heading === null){
+      $('#nav-dest-dist').textContent=fmtDist(dist);
+      setStatusText('나침반 신호 대기 중…');
+      rafId=requestAnimationFrame(renderAR); return;
+    }
+
     const rel=normDeg(bearing-state.heading);
     const signed = rel>180 ? rel-360 : rel;
     $('#nav-dest-dist').textContent=fmtDist(dist);
