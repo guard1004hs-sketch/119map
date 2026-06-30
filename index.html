@@ -7,8 +7,6 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<!-- iOS Safari: 전화번호 자동 감지 비활성화 -->
-<meta name="format-detection" content="telephone=no" />
 <title>제5회 청소년 안전캠프 · AR 가이드</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -26,7 +24,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
-body{font-family:var(--sans);background:var(--bg-dark);color:var(--txt);overflow:hidden;position:fixed;inset:0;overscroll-behavior:none;-webkit-overflow-scrolling:touch;-webkit-user-select:none;user-select:none;touch-action:manipulation;}
+body{font-family:var(--sans);background:var(--bg-dark);color:var(--txt);overflow:hidden;position:fixed;inset:0;overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:manipulation;}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
 .hidden{display:none !important;}
 
@@ -350,34 +348,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 #perm-modal-cancel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:var(--txt);}
 #perm-modal-agree{background:linear-gradient(180deg,#ffe14d,var(--yellow));color:#0b0b00;box-shadow:0 10px 24px -8px rgba(255,214,0,.55);}
 
-/* ===== 나침반 보정 오버레이 (iOS 전용) ===== */
-#compass-calibration{
-  position:absolute;top:0;left:0;right:0;bottom:0;inset:0;z-index:35;
-  background:rgba(0,0,0,.82);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
-  display:flex;align-items:center;justify-content:center;
-}
-.calib-card{
-  width:calc(100% - 48px);max-width:320px;
-  background:linear-gradient(180deg,rgba(10,18,26,.98),rgba(5,10,15,.99));
-  border:2px solid var(--yellow);border-radius:24px;
-  padding:28px 24px 24px;text-align:center;
-  box-shadow:0 0 50px -8px rgba(255,214,0,.45),0 20px 40px -10px rgba(0,0,0,.7);
-  animation:popInPerm .4s cubic-bezier(.22,1.4,.36,1);
-}
-.calib-icon{font-size:48px;margin-bottom:12px;animation:spin 2.5s linear infinite;}
-.calib-title{font-size:18px;font-weight:800;color:var(--yellow);margin-bottom:8px;}
-.calib-desc{font-size:13.5px;color:var(--txt-dim);line-height:1.65;margin-bottom:18px;}
-.calib-desc strong{color:var(--txt);}
-.calib-progress{
-  width:100%;height:6px;background:rgba(255,255,255,.08);border-radius:999px;
-  overflow:hidden;margin-bottom:10px;
-}
-.calib-bar{
-  height:100%;width:0%;background:linear-gradient(90deg,var(--yellow-dim),var(--yellow));
-  border-radius:999px;transition:width .4s ease;
-}
-.calib-sub{font-family:var(--mono);font-size:11px;color:var(--txt-dim);letter-spacing:.03em;}
-
 /* ===== 가로보기 강제: 세로 폰일 땐 화면 내용을 시계방향 90° 회전 ===== */
 @media (orientation: portrait){
   #map-screen:not(.hidden){
@@ -458,8 +428,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
 <!-- ===== 2. AR 화면 ===== -->
 <section id="ar-screen" class="hidden">
-  <!-- iOS Safari: autoplay는 반드시 muted + playsinline 조합이어야 허용됨 -->
-  <video id="video" autoplay playsinline muted webkit-playsinline x5-playsinline x-webkit-airplay="deny"></video>
+  <video id="video" autoplay playsinline muted webkit-playsinline x5-playsinline></video>
   <canvas id="canvas"></canvas>
   <!-- AR 서비스 안내 (첫 진입 시 1회) -->
   <div id="ar-notice" style="display:none">
@@ -530,17 +499,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     <div class="arr-actions">
       <button id="arr-close">계속 보기</button>
       <button id="arr-done">안내 완료</button>
-    </div>
-  </div>
-
-  <!-- 나침반 보정 안내 오버레이 (iOS 전용: 처음 실행 시 8자 움직임 요청) -->
-  <div id="compass-calibration" style="display:none">
-    <div class="calib-card">
-      <div class="calib-icon">🧭</div>
-      <div class="calib-title">나침반 보정 중</div>
-      <div class="calib-desc">스마트폰을 <strong>8자(∞) 모양</strong>으로<br>천천히 움직여 주세요</div>
-      <div class="calib-progress"><div class="calib-bar" id="calib-bar"></div></div>
-      <div class="calib-sub" id="calib-sub">보정 완료까지 잠시 기다려 주세요…</div>
     </div>
   </div>
 
@@ -673,49 +631,45 @@ function fmtDist(m){
 /* =========================================================================
    카메라
    ========================================================================= */
-let cameraStream = null;
+/* =========================================================================
+   카메라
+   ========================================================================= */
+let cameraStream = null;   // 스트림 참조 보관 → 나중에 제어 가능
 
 async function startCamera(){
-  // iOS Safari: exact 제약 금지 → ideal 사용, fallback 포함
-  const constraints = [
-    { audio:false, video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} } },
-    { audio:false, video:{ facingMode:'environment' } },
-    { audio:false, video:true }
-  ];
-  let stream, lastErr;
-  for(const c of constraints){
-    try { stream = await navigator.mediaDevices.getUserMedia(c); break; }
-    catch(e){ lastErr = e; }
+  // iOS Safari는 exact 제약 조건에서 실패할 수 있으므로 ideal 사용 + fallback
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+  } catch(e) {
+    // facingMode 실패 시 단순 video:true 로 재시도 (일부 iOS 기기 대응)
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
   }
-  if(!stream) throw lastErr || new Error('카메라를 열 수 없습니다');
-
   cameraStream = stream;
   const v = $('#video');
   v.srcObject = stream;
-  // iOS Safari: setAttribute로 muted 재설정 (JS 프로퍼티만으론 음소거 미적용 케이스 있음)
-  v.setAttribute('muted','');
-  v.muted = true;
+  // iOS Safari: load()를 명시적으로 호출 후 play()
   v.load();
-  await new Promise(resolve => {
+  await new Promise((resolve, reject) => {
     v.oncanplay = resolve;
-    v.onloadedmetadata = resolve;
-    setTimeout(resolve, 3000);  // iOS 구형: 3초 타임아웃
+    setTimeout(resolve, 2000); // 최대 2초 대기
   });
-  // iOS Safari: play()는 반드시 try-catch (NotAllowedError 가능)
-  try { await v.play(); } catch(e){
-    // play 실패해도 srcObject가 살아있으면 화면에 보임 → 무시 가능
-    console.warn('video.play():', e.message);
-  }
+  await v.play().catch(() => {});
   return stream;
 }
 
-// 백그라운드 전환 시 카메라 트랙 일시정지 (배터리·발열 절약)
-document.addEventListener('visibilitychange', ()=>{
+// 페이지가 백그라운드로 숨겨지면 카메라 트랙 비활성화 → 배터리·발열 절약
+// 다시 포그라운드로 돌아오면 자동 재개
+document.addEventListener('visibilitychange',()=>{
   if(!cameraStream) return;
-  const active = !document.hidden;
-  cameraStream.getVideoTracks().forEach(t => { t.enabled = active; });
+  const active=!document.hidden;
+  cameraStream.getVideoTracks().forEach(t=>{ t.enabled=active; });
+  // iOS Safari: 포그라운드 복귀 시 video.play() 재호출 필요
   if(active){
-    const v = $('#video');
+    const v=$('#video');
     if(v && v.paused) v.play().catch(()=>{});
   }
 });
@@ -726,10 +680,9 @@ document.addEventListener('visibilitychange', ()=>{
 let gpsWatchId=null;
 function startGpsTracking(){
   if(!('geolocation' in navigator)) throw new Error('이 기기는 위치 서비스를 지원하지 않습니다.');
-  // 🔧 maximumAge: iOS는 GPS 웜업이 느려서 5000ms로 늘림 (초반 null 반환 방지)
-  // timeout: iOS Safari는 위치 권한 팝업 처리에 시간이 걸리므로 충분히 설정
-  gpsWatchId=navigator.geolocation.watchPosition(onGps,onGpsError,{enableHighAccuracy:true,maximumAge:5000,timeout:30000});
+  gpsWatchId=navigator.geolocation.watchPosition(onGps,onGpsError,{enableHighAccuracy:true,maximumAge:3000,timeout:20000});
 }
+function onGps(p){
   const {latitude:lat,longitude:lon,accuracy}=p.coords;
   state.accuracy=accuracy;
 
@@ -750,7 +703,7 @@ function startGpsTracking(){
       const moveDist = calculateDistance(prevLat, prevLon, lat, lon);
       if(moveDist > 3){
         const moveBearing = calculateBearing(prevLat, prevLon, lat, lon);
-        // GPS heading은 스무딩 없이 바로 적용 (나침반보다 지연됨)
+        // GPS heading은 스무딩 없이 바로 적용 (나침반 보다 지연됨)
         if(state.heading === null) state.heading = moveBearing;
         else state.heading = smoothAngle(state.heading, moveBearing, 0.3);
       }
@@ -771,146 +724,100 @@ function updateStatus(ok){
 function setStatusText(t){ $('#status-text').textContent=t; }
 
 /* =========================================================================
-   나침반  (Android + iOS 공통)
+   나침반
    ========================================================================= */
-let compassAbsoluteActive = false;  // Android: deviceorientationabsolute 수신 여부
-let _lastOrientTimeAbs = 0;         // absolute 이벤트 스로틀 타임스탬프
-let _lastOrientTimeRel = 0;         // relative(iOS) 이벤트 스로틀 타임스탬프
-let _headingJumpCount  = 0;         // 연속 급격 변화 카운터
-let _lastRawHeading    = null;      // 이전 원시 heading (jump 감지)
-
-// ── 보정(Calibration) 상태 ──────────────────────────────────────────────────
-// · Android: deviceorientationabsolute 첫 이벤트가 오는 순간 자동 완료
-// · iOS    : webkitCompassAccuracy ≤ 45° 샘플이 CALIB_NEEDED 개 쌓이면 완료
-// · 보정 완료 전에는 화살표 렌더링을 막아 엉뚱한 방향 방지
-const _isIOS      = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-const CALIB_NEEDED = 8;
-let _calibDone    = false;  // Android도 처음엔 false → 첫 absolute 이벤트에 즉시 true
-let _calibSamples = 0;
-
-// ── 보정 UI 헬퍼 ────────────────────────────────────────────────────────────
-function showCalibrationUI(){
-  const el = $('#compass-calibration');
-  if(el) el.style.display = 'flex';
-}
-function updateCalibProgress(pct){
-  const bar = $('#calib-bar');
-  if(bar) bar.style.width = Math.min(100, pct) + '%';
-  const sub = $('#calib-sub');
-  if(sub) sub.textContent = pct >= 100 ? '✓ 보정 완료!' : `보정 중… (${Math.round(pct)}%)`;
-}
-function hideCalibrationUI(){
-  const el = $('#compass-calibration');
-  if(!el) return;
-  el.style.transition = 'opacity .5s';
-  el.style.opacity = '0';
-  setTimeout(()=>{ el.style.display='none'; el.style.opacity=''; el.style.transition=''; }, 520);
-}
-function markCalibDone(){
-  if(_calibDone) return;
-  _calibDone = true;
-  hideCalibrationUI();
-}
+// absolute 이벤트(정밀)가 실제로 발화됐으면 relative 이벤트는 무시
+// → Android에서 onOrient가 2번씩 호출되는 이중 리스너 문제 방지
+let compassAbsoluteActive = false;
+let _lastOrientTime = 0;          // 스로틀용 타임스탬프
+let _headingJumpCount = 0;        // 급격한 각도 변화 연속 횟수
+let _lastRawHeading = null;       // 이전 원시 heading (jump 감지용)
 
 async function startCompass(){
-  // iOS 13+ 전용: DeviceOrientationEvent.requestPermission()
-  // 반드시 사용자 제스처 직후 콜스택에서 호출해야 함
-  if(typeof DeviceOrientationEvent !== 'undefined' &&
-     typeof DeviceOrientationEvent.requestPermission === 'function'){
-    const res = await DeviceOrientationEvent.requestPermission();
-    if(res !== 'granted') throw new Error('방향 센서 권한이 거부되었습니다.');
+  if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+    const res=await DeviceOrientationEvent.requestPermission();
+    if(res!=='granted') throw new Error('방향 센서 권한이 거부되었습니다.');
   }
-  window.addEventListener('deviceorientationabsolute', onOrient, true);
-  window.addEventListener('deviceorientation',         onOrient, true);
+  window.addEventListener('deviceorientationabsolute',onOrient,true);
+  window.addEventListener('deviceorientation',onOrient,true);
 }
-
 function getScreenOrientAngle(){
-  if(screen.orientation && typeof screen.orientation.angle === 'number')
-    return screen.orientation.angle;
+  // screen.orientation.angle 우선, 없으면 window.orientation (deprecated but widely supported)
+  if(screen.orientation && screen.orientation.angle != null) return screen.orientation.angle;
   if(typeof window.orientation === 'number') return window.orientation;
   return 0;
 }
 
 function onOrient(e){
-  // Android: absolute 이벤트 수신 확인
-  if(e.type === 'deviceorientationabsolute') compassAbsoluteActive = true;
-  // absolute 활성 중 relative 이벤트는 중복이므로 무시
-  if(e.type === 'deviceorientation' && compassAbsoluteActive) return;
-
-  // 타입별 독립 스로틀 (iOS ↔ Android 이벤트가 서로를 차단하지 않도록)
+  // ── 스로틀: COMPASS_THROTTLE_MS 이내 재호출은 무시 (과도한 이벤트 차단)
   const now = Date.now();
-  if(e.type === 'deviceorientationabsolute'){
-    if(now - _lastOrientTimeAbs < COMPASS_THROTTLE_MS) return;
-    _lastOrientTimeAbs = now;
-  } else {
-    if(now - _lastOrientTimeRel < COMPASS_THROTTLE_MS) return;
-    _lastOrientTimeRel = now;
-  }
+  if(now - _lastOrientTime < COMPASS_THROTTLE_MS) return;
+  _lastOrientTime = now;
+
+  // absolute 이벤트가 한 번이라도 오면 플래그 세팅
+  if(e.type==='deviceorientationabsolute') compassAbsoluteActive=true;
+  // absolute가 작동 중인데 relative 이벤트가 또 오면 무시 (중복 호출 차단)
+  if(e.type==='deviceorientation' && compassAbsoluteActive) return;
 
   let h = null;
-  const orient = getScreenOrientAngle();
 
-  /* ── ① iOS Safari ─────────────────────────────────────────────────────── */
   if(typeof e.webkitCompassHeading === 'number'){
-    const acc = e.webkitCompassAccuracy;
-    if(typeof acc === 'number' && (acc < 0 || acc > 45)){
-      // 보정 부족 → UI 표시 후 이번 샘플은 버림
-      if(!_calibDone) showCalibrationUI();
-      setStatusText('🧭 나침반 보정 필요 — 기기를 8자로 움직여주세요');
-      return;
-    }
+    // ── iOS Safari ──────────────────────────────────────────────────────────
+    // webkitCompassHeading = "기기 top이 가리키는 방위각" (0=북, 시계방향)
+    // webkitCompassAccuracy가 -1이면 센서 보정 미완료 → 무시
+    if(typeof e.webkitCompassAccuracy === 'number' && e.webkitCompassAccuracy < 0) return;
     h = e.webkitCompassHeading;
 
-    // 보정 게이지 업데이트
-    if(!_calibDone){
-      _calibSamples++;
-      updateCalibProgress((_calibSamples / CALIB_NEEDED) * 100);
-      if(_calibSamples >= CALIB_NEEDED) markCalibDone();
-    }
-
-    // 화면 방향 보정 (webkitCompassHeading은 portrait 기준 절대값)
-    if     (orient === 90)               h = normDeg(h + 90);
+    // 화면 방향 보정: 카메라 시선은 기기 뒷면 방향
+    // portrait(0): 보정 없음
+    // landscapeLeft(90, 홈버튼 오른쪽): 카메라가 오른쪽 → h + 90
+    // landscapeRight(270/-90, 홈버튼 왼쪽): 카메라가 왼쪽 → h - 90
+    // upsideDown(180): h + 180
+    const orient = getScreenOrientAngle();
+    if(orient === 90)                  h = normDeg(h + 90);
     else if(orient === -90 || orient === 270) h = normDeg(h - 90);
-    else if(orient === 180)              h = normDeg(h + 180);
+    else if(orient === 180)            h = normDeg(h + 180);
 
-  /* ── ② Android (deviceorientationabsolute) ────────────────────────────── */
   } else if(e.absolute && typeof e.alpha === 'number'){
+    // ── Android: deviceorientationabsolute ──────────────────────────────────
+    // e.alpha = Z축 반시계 방향 회전 (북쪽=0에서 시계방향이 양수)
+    // 북쪽 heading = 360 - alpha
     h = normDeg(360 - e.alpha);
 
     // 화면 방향 보정
-    if     (orient === 90)               h = normDeg(h + 90);
+    const orient = getScreenOrientAngle();
+    if(orient === 90)                  h = normDeg(h + 90);
     else if(orient === -90 || orient === 270) h = normDeg(h - 90);
-    else if(orient === 180)              h = normDeg(h + 180);
+    else if(orient === 180)            h = normDeg(h + 180);
 
-    // Android는 absolute 이벤트 자체가 보정 완료를 의미 → 즉시 완료
-    markCalibDone();
-
-  /* ── ③ fallback (상대값, 절대 방위 불가) ──────────────────────────────── */
   } else {
-    if(!_calibDone){
-      showCalibrationUI();
-      setStatusText('나침반 보정 중… 기기를 8자로 움직여주세요');
-    }
+    // ── non-absolute fallback ────────────────────────────────────────────────
+    // 상대값이라 절대 방위 계산 불가 → heading 갱신 안 함
+    if(!compassAbsoluteActive) setStatusText('나침반 보정 중… 기기를 8자로 움직여주세요');
     return;
   }
 
   if(h == null || isNaN(h)) return;
 
-  // 급격한 각도 점프 감지 (노이즈/글리치 차단)
+  // ── 급격한 각도 점프 감지 (노이즈/센서 오류 차단) ──────────────────────────
+  // HEADING_JUMP_DEG 이상 갑자기 바뀌면 연속 3번까지는 EMA alpha를 더 작게 적용
+  // (센서가 갑자기 반대 방향을 가리키는 글리치 완화)
   let alpha = HEADING_SMOOTH;
   if(_lastRawHeading !== null){
     const rawDiff = Math.abs(((h - _lastRawHeading + 540) % 360) - 180);
     if(rawDiff > HEADING_JUMP_DEG){
       _headingJumpCount++;
-      if     (_headingJumpCount <= 2) alpha = HEADING_SMOOTH * 0.2;
-      else if(_headingJumpCount <= 5) alpha = HEADING_SMOOTH * 0.5;
-      // 6회 이상 연속 → 실제 방향 전환으로 판단, 정상 alpha 사용
+      // 연속 점프: 처음엔 거의 무시, 3번 연속이면 절반만 반영
+      if(_headingJumpCount <= 2)       alpha = HEADING_SMOOTH * 0.2;  // 거의 무시
+      else if(_headingJumpCount <= 5)  alpha = HEADING_SMOOTH * 0.5;  // 절반 반영
+      // 6번 이상 연속: 실제 방향 전환으로 판단 → 정상 alpha 사용
     } else {
-      _headingJumpCount = 0;
+      _headingJumpCount = 0; // 안정적이면 카운터 리셋
     }
   }
   _lastRawHeading = h;
 
+  // 첫 유효 heading이면 즉시 설정 (smoothAngle: prev==null 이면 next 그대로 반환)
   state.heading = smoothAngle(state.heading, normDeg(h), alpha);
 }
 
@@ -993,7 +900,6 @@ function renderAR(){
     const bearing=calculateBearing(state.pos.lat,state.pos.lon,state.dest.lat,state.dest.lon);
 
     // heading이 아직 없으면 화살표 렌더링 스킵 (엉뚱한 방향 방지)
-    // _calibDone은 별도 체크 안 함 — Android는 첫 이벤트에 즉시 true가 됨
     if(state.heading === null){
       $('#nav-dest-dist').textContent=fmtDist(dist);
       setStatusText('나침반 신호 대기 중…');
@@ -1251,47 +1157,19 @@ function markPerm(id,ok){ const el=$('#'+id); el.classList.remove('ok','fail'); 
 function showError(msg){ const e=$('#perm-error'); e.textContent=msg; e.classList.remove('hidden'); }
 
 async function startApp(){
-  const btn=$('#start-btn');
-  btn.disabled=true; btn.textContent='센서 연결 중…';
-  $('#perm-error').classList.add('hidden');
+  const btn=$('#start-btn'); btn.disabled=true; btn.textContent='센서 연결 중…'; $('#perm-error').classList.add('hidden');
   try{
-    // ① iOS Safari 핵심 규칙:
-    //    DeviceOrientationEvent.requestPermission()은 반드시
-    //    사용자 제스처(터치/클릭) 직접 콜스택 안에서 호출해야 함.
-    //    async/await 체인이 길어지면 iOS가 "제스처 맥락 벗어남"으로 거부할 수 있으므로
-    //    나침반 권한을 가장 먼저 요청한다.
-    try{
-      await startCompass();
-      markPerm('perm-ori', true);
-    } catch(e){
-      markPerm('perm-ori', false);
-      // 방향 센서 실패는 치명적이지 않음 (GPS 이동 방향으로 대체 가능)
-      console.warn('Compass:', e.message);
-    }
-
-    // ② 카메라 — iOS는 getUserMedia도 사용자 제스처 직후 호출 필요
-    try{
-      await startCamera();
-      markPerm('perm-cam', true);
-    } catch(e){
-      markPerm('perm-cam', false);
-      throw new Error('카메라 접근 실패: ' + e.message);
-    }
-
-    // ③ GPS
-    try{
-      startGpsTracking();
-      markPerm('perm-gps', true);
-    } catch(e){
-      markPerm('perm-gps', false);
-      throw new Error('위치 접근 실패: ' + e.message);
-    }
-
-    resizeCanvas();
-    show('ar');   // RAF 루프는 show('ar') 안에서 시작됨
-
-  } catch(err){
-    showError(err.message + ' — HTTPS 환경인지, 브라우저 권한이 허용됐는지 확인하세요.');
+    // ① iOS Safari: DeviceOrientation 권한은 반드시 사용자 제스처 콜스택 안에서 요청
+    //    startCompass()를 카메라/GPS보다 먼저 호출해 iOS 권한 타이밍 보장
+    try{ await startCompass(); markPerm('perm-ori',true); }
+    catch(e){ markPerm('perm-ori',false); /* 방향 센서 실패는 치명적이지 않음 */ }
+    try{ await startCamera(); markPerm('perm-cam',true); }
+    catch(e){ markPerm('perm-cam',false); throw new Error('카메라 접근 실패: '+e.message); }
+    try{ startGpsTracking(); markPerm('perm-gps',true); }
+    catch(e){ markPerm('perm-gps',false); throw new Error('위치 접근 실패: '+e.message); }
+    resizeCanvas(); show('ar');   // RAF는 show('ar') 안에서 시작됨
+  }catch(err){
+    showError(err.message+' — HTTPS 환경인지, 브라우저 권한이 허용됐는지 확인하세요.');
     btn.disabled=false; btn.textContent='다시 시도';
   }
 }
