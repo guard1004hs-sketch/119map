@@ -570,12 +570,14 @@ const DESTINATIONS = [
 /* 동작 파라미터 */
 const ACCURACY_WARN = 20;       // m — 이 이상이면 정확도 경고 표시 (기존 30 → 20)
 const GPS_IGNORE = 60;          // m — 이 이상이면 GPS 업데이트 자체 무시 (추가)
-const HEADING_SMOOTH = 0.09;    // 화살표 떨림 보정 (이전 0.18에서 반감 → 더 부드러움)
+const HEADING_SMOOTH = 0.045;   // ▼ 민감도 절반으로 감소 (기존 0.09 → 0.045)
 const POS_SMOOTH = 0.15;        // 위치 EMA 계수 (기존 0.25 → 0.15, 급격한 GPS 점프 억제)
 const PROXIMITY_M = 15;         // 근접: 캐릭터 2배 + 펄스 + 실선 (기존 50 → 15)
 const ARRIVAL_M = 8;            // 도착: 알림 모달 (기존 15 → 8, PROXIMITY보다 작아야 함)
 const VIEW_ANGLE = 30;          // 시야각 ±30° — 이 안에 들어와야 캐릭터 표시
 const VIEW_HYSTERESIS = 5;      // 시야 안/밖 깜빡임 방지 마진
+const COMPASS_THROTTLE_MS = 80; // ▼ 나침반 이벤트 스로틀 (80ms = 초당 최대 12회) — 마구 돌기 방지
+const HEADING_JUMP_DEG = 25;    // ▼ 이 이상 갑자기 바뀌면 jump 카운터 증가 (노이즈 차단)
 
 /* 지도 크기 (확대/드래그 transform 기준) */
 const MAP_W = 1622;
@@ -727,6 +729,9 @@ function setStatusText(t){ $('#status-text').textContent=t; }
 // absolute 이벤트(정밀)가 실제로 발화됐으면 relative 이벤트는 무시
 // → Android에서 onOrient가 2번씩 호출되는 이중 리스너 문제 방지
 let compassAbsoluteActive = false;
+let _lastOrientTime = 0;          // 스로틀용 타임스탬프
+let _headingJumpCount = 0;        // 급격한 각도 변화 연속 횟수
+let _lastRawHeading = null;       // 이전 원시 heading (jump 감지용)
 
 async function startCompass(){
   if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
@@ -744,6 +749,11 @@ function getScreenOrientAngle(){
 }
 
 function onOrient(e){
+  // ── 스로틀: COMPASS_THROTTLE_MS 이내 재호출은 무시 (과도한 이벤트 차단)
+  const now = Date.now();
+  if(now - _lastOrientTime < COMPASS_THROTTLE_MS) return;
+  _lastOrientTime = now;
+
   // absolute 이벤트가 한 번이라도 오면 플래그 세팅
   if(e.type==='deviceorientationabsolute') compassAbsoluteActive=true;
   // absolute가 작동 중인데 relative 이벤트가 또 오면 무시 (중복 호출 차단)
@@ -788,8 +798,27 @@ function onOrient(e){
   }
 
   if(h == null || isNaN(h)) return;
+
+  // ── 급격한 각도 점프 감지 (노이즈/센서 오류 차단) ──────────────────────────
+  // HEADING_JUMP_DEG 이상 갑자기 바뀌면 연속 3번까지는 EMA alpha를 더 작게 적용
+  // (센서가 갑자기 반대 방향을 가리키는 글리치 완화)
+  let alpha = HEADING_SMOOTH;
+  if(_lastRawHeading !== null){
+    const rawDiff = Math.abs(((h - _lastRawHeading + 540) % 360) - 180);
+    if(rawDiff > HEADING_JUMP_DEG){
+      _headingJumpCount++;
+      // 연속 점프: 처음엔 거의 무시, 3번 연속이면 절반만 반영
+      if(_headingJumpCount <= 2)       alpha = HEADING_SMOOTH * 0.2;  // 거의 무시
+      else if(_headingJumpCount <= 5)  alpha = HEADING_SMOOTH * 0.5;  // 절반 반영
+      // 6번 이상 연속: 실제 방향 전환으로 판단 → 정상 alpha 사용
+    } else {
+      _headingJumpCount = 0; // 안정적이면 카운터 리셋
+    }
+  }
+  _lastRawHeading = h;
+
   // 첫 유효 heading이면 즉시 설정 (smoothAngle: prev==null 이면 next 그대로 반환)
-  state.heading = smoothAngle(state.heading, normDeg(h), HEADING_SMOOTH);
+  state.heading = smoothAngle(state.heading, normDeg(h), alpha);
 }
 
 /* =========================================================================
@@ -881,7 +910,10 @@ function renderAR(){
     const signed = rel>180 ? rel-360 : rel;
     $('#nav-dest-dist').textContent=fmtDist(dist);
     $('#ti-dist').textContent=fmtDist(dist);
-    arrowWrap.style.transform=`rotate(${rel}deg)`;
+    // 급격한 점프 중이면 화살표 회전 멈춤 (노이즈 시 떨림 방지)
+    if(_headingJumpCount <= 2){
+      arrowWrap.style.transform=`rotate(${rel}deg)`;
+    }
     destMarker.classList.toggle('near', dist < PROXIMITY_M);
 
     // 50m 이내: groundOpacity 페이드인, 밖으로 나가면 페이드아웃 (매 프레임 0.04씩 보간)
