@@ -680,7 +680,9 @@ document.addEventListener('visibilitychange',()=>{
 let gpsWatchId=null;
 function startGpsTracking(){
   if(!('geolocation' in navigator)) throw new Error('이 기기는 위치 서비스를 지원하지 않습니다.');
-  gpsWatchId=navigator.geolocation.watchPosition(onGps,onGpsError,{enableHighAccuracy:true,maximumAge:3000,timeout:20000});
+  // 🔧 maximumAge: iOS는 GPS 웜업이 느려서 5000ms로 늘림 (초반 null 반환 방지)
+  // timeout: iOS Safari는 위치 권한 팝업 처리에 시간이 걸리므로 충분히 설정
+  gpsWatchId=navigator.geolocation.watchPosition(onGps,onGpsError,{enableHighAccuracy:true,maximumAge:5000,timeout:30000});
 }
 function onGps(p){
   const {latitude:lat,longitude:lon,accuracy}=p.coords;
@@ -729,7 +731,8 @@ function setStatusText(t){ $('#status-text').textContent=t; }
 // absolute 이벤트(정밀)가 실제로 발화됐으면 relative 이벤트는 무시
 // → Android에서 onOrient가 2번씩 호출되는 이중 리스너 문제 방지
 let compassAbsoluteActive = false;
-let _lastOrientTime = 0;          // 스로틀용 타임스탬프
+let _lastOrientTimeAbs = 0;       // 🔧 absolute 이벤트 전용 스로틀 타임스탬프
+let _lastOrientTimeRel = 0;       // 🔧 relative(iOS) 이벤트 전용 스로틀 타임스탬프
 let _headingJumpCount = 0;        // 급격한 각도 변화 연속 횟수
 let _lastRawHeading = null;       // 이전 원시 heading (jump 감지용)
 
@@ -742,30 +745,44 @@ async function startCompass(){
   window.addEventListener('deviceorientation',onOrient,true);
 }
 function getScreenOrientAngle(){
-  // screen.orientation.angle 우선, 없으면 window.orientation (deprecated but widely supported)
-  if(screen.orientation && screen.orientation.angle != null) return screen.orientation.angle;
+  // 🔧 screen.orientation.angle 우선 (iOS 16.4+, 모던 Android)
+  if(screen.orientation && typeof screen.orientation.angle === 'number'){
+    return screen.orientation.angle;
+  }
+  // 🔧 window.orientation fallback (iOS 구버전, deprecated but works)
+  // window.orientation: 0=portrait, 90=landscapeLeft, -90=landscapeRight, 180=upsideDown
+  // ※ iOS에서 -90은 그대로 -90으로 반환되므로 별도 처리
   if(typeof window.orientation === 'number') return window.orientation;
   return 0;
 }
 
 function onOrient(e){
-  // ── 스로틀: COMPASS_THROTTLE_MS 이내 재호출은 무시 (과도한 이벤트 차단)
-  const now = Date.now();
-  if(now - _lastOrientTime < COMPASS_THROTTLE_MS) return;
-  _lastOrientTime = now;
-
   // absolute 이벤트가 한 번이라도 오면 플래그 세팅
   if(e.type==='deviceorientationabsolute') compassAbsoluteActive=true;
   // absolute가 작동 중인데 relative 이벤트가 또 오면 무시 (중복 호출 차단)
   if(e.type==='deviceorientation' && compassAbsoluteActive) return;
+
+  // 🔧 이벤트 타입별로 스로틀 타임스탬프 분리
+  // → iOS(relative)와 Android(absolute)가 서로 차단하지 않도록 독립적으로 관리
+  const now = Date.now();
+  if(e.type==='deviceorientationabsolute'){
+    if(now - _lastOrientTimeAbs < COMPASS_THROTTLE_MS) return;
+    _lastOrientTimeAbs = now;
+  } else {
+    if(now - _lastOrientTimeRel < COMPASS_THROTTLE_MS) return;
+    _lastOrientTimeRel = now;
+  }
 
   let h = null;
 
   if(typeof e.webkitCompassHeading === 'number'){
     // ── iOS Safari ──────────────────────────────────────────────────────────
     // webkitCompassHeading = "기기 top이 가리키는 방위각" (0=북, 시계방향)
-    // webkitCompassAccuracy가 -1이면 센서 보정 미완료 → 무시
-    if(typeof e.webkitCompassAccuracy === 'number' && e.webkitCompassAccuracy < 0) return;
+    // 🔧 webkitCompassAccuracy: -1 = 보정 불가, 큰 양수(>45) = 보정 부족
+    //    iOS는 보정 불완전할 때 큰 양수값을 반환하므로 45° 초과도 차단
+    if(typeof e.webkitCompassAccuracy === 'number'){
+      if(e.webkitCompassAccuracy < 0 || e.webkitCompassAccuracy > 45) return;
+    }
     h = e.webkitCompassHeading;
 
     // 화면 방향 보정: 카메라 시선은 기기 뒷면 방향
